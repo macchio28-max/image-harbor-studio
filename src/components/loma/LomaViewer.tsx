@@ -312,24 +312,18 @@ export function LomaViewer() {
           <Tool icon={<Eraser className="text-chart-3" />} label="Senza metadati" onClick={deepClean} />
         </Group>
         <Group>
-          <Tool icon={<MessageCircle />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/")} />
-          <Tool icon={<Circle className="text-primary" />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/")} />
-          <Tool icon={<Sparkles className="text-chart-4" />} label="Gemini" onClick={() => openAI("Gemini", "https://gemini.google.com/")} />
-          <Tool icon={<Clapperboard className="text-chart-1" />} label="Flow" onClick={() => openAI("Flow", "https://labs.google/fx/tools/flow")} />
-        </Group>
-        <Group>
-          <Tool icon={<Gem className="text-chart-4" />} label="Topaz Photo AI" onClick={() => topaz("Topaz Photo AI")} />
-          <Tool icon={<Maximize2 className="text-chart-5" />} label="Topaz Gigapixel AI" onClick={() => topaz("Topaz Gigapixel AI")} />
-          <Tool icon={<Settings />} label="Percorsi" onClick={() => setTopazOpen(true)} />
-        </Group>
-        <Group last>
-          <Tool icon={<HardDrive className="text-chart-2" />} label="Drive" onClick={() => share("Google Drive", "https://drive.google.com/drive/my-drive")} />
-          <Tool icon={<Cloud className="text-primary" />} label="OneDrive" onClick={() => share("OneDrive", "https://onedrive.live.com/")} />
-          <Tool icon={<CloudSun />} label="iCloud" onClick={() => share("iCloud", "https://www.icloud.com/iclouddrive/")} />
-          <Tool icon={<Mail className="text-chart-5" />} label="Mail" onClick={() => share("Mail", "mailto:?subject=Immagine%20da%20LoMa%20VIEWER")} />
-          <Tool icon={<Phone className="text-chart-2" />} label="WhatsApp" onClick={() => share("WhatsApp", "https://web.whatsapp.com/")} />
-          <Tool icon={<Radio className="text-primary" />} label="AirDrop" onClick={() => share("AirDrop")} />
-          <Tool icon={<Send className="text-chart-2" />} label="LocalSend" onClick={() => share("LocalSend")} />
+          <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/")} />
+          <Tool icon={<B.MetaAIIcon />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/")} />
+          <Tool icon={<B.GeminiIcon />} label="Gemini" onClick={() => openAI("Gemini", "https://gemini.google.com/")} />
+          <Tool icon={<B.FlowIcon />} label="Flow" onClick={() => openAI("Flow", "https://labs.google/fx/tools/flow")} />
+NEXT_TOPAZ
+          <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
+          <Tool icon={<B.OneDriveIcon />} label="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
+          <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => uploadCloud("iCloud Drive", "https://www.icloud.com/iclouddrive/")} />
+          <Tool icon={<B.MailIcon />} label="Mail" onClick={() => share("Mail", "mailto:?subject=Immagine%20da%20LoMa%20VIEWER")} />
+          <Tool icon={<B.WhatsAppIcon />} label="WhatsApp" onClick={() => share("WhatsApp", "whatsapp://")} />
+          <Tool icon={<B.AirDropIcon />} label="AirDrop" onClick={() => share("AirDrop")} />
+          <Tool icon={<B.LocalSendIcon />} label="LocalSend" onClick={() => share("LocalSend")} />
         </Group>
       </header>
 
