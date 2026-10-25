@@ -21,10 +21,10 @@ export function ConvertDialog({ current, preview, size, session, visible, onClos
   const set = (p: Partial<ConvOpts>) => setO((x) => ({ ...x, ...p }));
   const files = useMemo(() => scope === "current" ? (current ? [current] : []) : (scope === "visible" ? visible : session).map((s) => s.file), [scope, current, visible, session]);
   const desk = typeof window !== "undefined" ? (window as any).lomaDesktop : null;
-  useEffect(() => { const k = (e: KeyboardEvent) => e.key === "Escape" && !busy && onClose(); addEventListener("keydown", k); return () => removeEventListener("keydown", k); }, [busy, onClose]);
+  useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); }; addEventListener("keydown", k); return () => removeEventListener("keydown", k); }, [busy, onClose]);
 
-  const start = async () => {
-    if (!files.length) return toast.error("Nessuna immagine da convertire");
+  const start = async (): Promise<void> => {
+    if (!files.length) { toast.error("Nessuna immagine da convertire"); return; }
     let dir = "";
     if (desk?.pickFolder && desk?.saveToFolder) {
       dir = await desk.pickFolder("Scegli la cartella di destinazione", localStorage.getItem("loma.convert.dir") || "");
@@ -36,7 +36,7 @@ export function ConvertDialog({ current, preview, size, session, visible, onClos
     const used = new Set<string>();
     let fails = 0;
     for (let i = 0; i < files.length; i++) {
-      const f = files[i];
+      const f = files[i]!;
       try {
         const b = await convertFile(f, o);
         let name = `${baseName(f.name)}.${EXT[o.fmt]}`, k = 1;

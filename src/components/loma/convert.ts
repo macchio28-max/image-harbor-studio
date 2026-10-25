@@ -26,7 +26,7 @@ function bmp(d: ImageData): Blob {
   v.setUint16(26, 1, true); v.setUint16(28, 24, true); v.setUint32(34, row * h, true);
   for (let y = 0; y < h; y++) {
     let o = 54 + (h - 1 - y) * row;
-    for (let x = 0; x < w; x++) { const i = (y * w + x) * 4; u[o++] = data[i + 2]; u[o++] = data[i + 1]; u[o++] = data[i]; }
+    for (let x = 0; x < w; x++) { const i = (y * w + x) * 4; u[o++] = data[i + 2]!; u[o++] = data[i + 1]!; u[o++] = data[i]!; }
   }
   return new Blob([b], { type: "image/bmp" });
 }
@@ -47,7 +47,7 @@ function tiff(d: ImageData, alpha: boolean): Blob {
   });
   for (let k = 0; k < spp; k++) v.setUint16(bpsOff + k * 2, 8, true);
   let o = dataOff;
-  for (let i = 0; i < data.length; i += 4) { u[o++] = data[i]; u[o++] = data[i + 1]; u[o++] = data[i + 2]; if (alpha) u[o++] = data[i + 3]; }
+  for (let i = 0; i < data.length; i += 4) { u[o++] = data[i]!; u[o++] = data[i + 1]!; u[o++] = data[i + 2]!; if (alpha) u[o++] = data[i + 3]!; }
   return new Blob([b], { type: "image/tiff" });
 }
 
