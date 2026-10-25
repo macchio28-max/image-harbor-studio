@@ -17,6 +17,8 @@ import * as B from "./brand-icons";
 import { DevelopPanel } from "./DevelopPanel";
 import { Filmstrip } from "./Filmstrip";
 import { ComparePane } from "./ComparePane";
+import { CloudSetup } from "./CloudSetup";
+import { type CloudKind, getCloudCfg, uploadToCloud } from "./cloud-upload";
 import { ContactSheet } from "./ContactSheet";
 import { type CullItem, type CullFilter, IMAGE_RE, readCull, applyFilter } from "./culling";
 import { developCanvas, autoMeasure } from "./develop";
@@ -42,6 +44,7 @@ export function LomaViewer() {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [imgReady, setImgReady] = useState(0);
   const [topazOpen, setTopazOpen] = useState(false);
+  const [cloudSetup, setCloudSetup] = useState<CloudKind | null>(null);
   const [hist, setHist] = useState<Uint32Array[] | null>(null);
   const preview = useRef<HTMLCanvasElement>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -480,10 +483,24 @@ export function LomaViewer() {
 
   const uploadCloud = async (target: string, web: string) => {
     if (target !== "iCloud Drive") {
-      // Drive / OneDrive: open the user's cloud in the default browser.
-      const desk = (window as any).lomaDesktop;
-      if (desk?.openExternal) desk.openExternal(web); else window.open(web, "_blank", "noopener");
-      notify(`${target} aperto nel browser.`);
+      // Drive / OneDrive: direct upload through the service API into the configured folder.
+      const kind: CloudKind = target === "OneDrive" ? "onedrive" : "drive";
+      if (!img || !imgEl.current) { notify(`Carica prima un'immagine da caricare su ${target}.`); return; }
+      if (!getCloudCfg(kind).clientId) { setCloudSetup(kind); return; }
+      const f = await outputFile();
+      const id = sonnerToast.loading(`Preparazione caricamento su ${target}...`);
+      try {
+        const link = await uploadToCloud(kind, f, (m) => sonnerToast.loading(m, { id }));
+        const desk = (window as any).lomaDesktop;
+        sonnerToast.success(`${f.name} caricato su ${target}${getCloudCfg(kind).folder ? ` in "${getCloudCfg(kind).folder}"` : ""}.`, {
+          id,
+          action: link ? { label: "Apri", onClick: () => (desk?.openExternal ? desk.openExternal(link) : window.open(link, "_blank", "noopener")) } : undefined,
+        });
+      } catch (e: any) {
+        sonnerToast.error(`Caricamento su ${target} non riuscito: ${e?.message || e}`, {
+          id, action: { label: "Impostazioni", onClick: () => setCloudSetup(kind) },
+        });
+      }
       return;
     }
     if (!img || !imgEl.current) { notify(`Carica prima un'immagine da salvare su ${target}.`); return; }
@@ -849,6 +866,13 @@ export function LomaViewer() {
         type="file" multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }}
       />
       {topazOpen && <TopazSettings onClose={() => setTopazOpen(false)} />}
+      {cloudSetup && (
+        <CloudSetup
+          kind={cloudSetup}
+          onClose={() => setCloudSetup(null)}
+          onSaved={() => { const k = cloudSetup; setCloudSetup(null); uploadCloud(k === "drive" ? "Google Drive" : "OneDrive", ""); }}
+        />
+      )}
     </div>
   );
 }
