@@ -287,9 +287,18 @@ export function LomaViewer() {
 
   const topaz = async (app: string) => {
     if (!need()) return;
+    if (isTouchDevice()) {
+      // Tablet/mobile: hand the file to the OS share sheet ("Apri in Lightroom", ...).
+      const b = await renderClean(imgEl.current!, adjust, crop, "image/png");
+      const f = new File([b], `${baseName(img!.file.name)}.png`, { type: "image/png" });
+      if (navigator.canShare?.({ files: [f] })) {
+        try { await navigator.share({ files: [f], title: f.name }); } catch { /* annullato */ }
+        return;
+      }
+    }
     const path = localStorage.getItem(`loma.topaz.${app}`) || "";
     await exportClean("image/png", `_for_${app.replace(/\s/g, "")}`);
-    notify(path ? `Esportato. Aprilo con ${app} (${path}).` : `Esportato per ${app}. Configura il percorso in impostazioni.`);
+    notify(path ? `Esportato. Aprilo con ${app} (${path}).` : `Esportato per ${app}. Imposta il percorso in "Percorsi".`);
   };
 
   const applyCrop = () => {
@@ -590,36 +599,72 @@ function Rows({ rows }: { rows: [string, unknown][] }) {
   );
 }
 
+function isTouchDevice() {
+  if (typeof window === "undefined") return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) ||
+    window.matchMedia?.("(pointer: coarse)").matches;
+}
+
 function TopazSettings({ onClose }: { onClose: () => void }) {
   const apps = ["Topaz Photo AI", "Topaz Gigapixel AI", "Adobe Photoshop", "Adobe Lightroom", "Adobe Lightroom Classic"];
   const [vals, setVals] = useState(() => Object.fromEntries(apps.map((a) => [a, localStorage.getItem(`loma.topaz.${a}`) ?? ""])));
+  const [mobile] = useState(isTouchDevice);
+  const browse = (a: string) => {
+    const inp = document.createElement("input");
+    inp.type = "file";
+    inp.accept = ".exe,.app,.lnk,application/x-msdownload";
+    inp.onchange = () => {
+      const f: any = inp.files?.[0];
+      if (!f) return;
+      const full = (window as any).lomaDesktop?.getPathForFile?.(f) || f.path || f.name;
+      setVals((v) => ({ ...v, [a]: full }));
+    };
+    inp.click();
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70" onClick={onClose}>
-      <div className="w-[420px] rounded-lg border border-border bg-popover p-5" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-1 text-lg font-semibold">Programmi esterni</h3>
-        <p className="mb-4 text-sm text-muted-foreground">
-          Percorsi dei programmi Topaz e Adobe. Nel browser l'immagine viene esportata pronta da aprire; nella versione desktop viene usato il percorso.
-        </p>
-        {apps.map((a) => (
-          <label key={a} className="mb-3 block text-sm">
-            {a}
-            <input
-              value={vals[a]}
-              placeholder={a.startsWith("Adobe") ? `C:\\Program Files\\Adobe\\${a}\\ oppure /Applications/${a}.app` : a.includes("Giga") ? "C:\\Program Files\\Topaz Labs LLC\\Topaz Gigapixel AI" : "/Applications/Topaz Photo AI.app"}
-              onChange={(e) => setVals((v) => ({ ...v, [a]: e.target.value }))}
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2"
-            />
-          </label>
-        ))}
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm">Annulla</button>
-          <button
-            onClick={() => { apps.forEach((a) => localStorage.setItem(`loma.topaz.${a}`, vals[a] ?? "")); onClose(); }}
-            className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
-          >
-            Salva
-          </button>
-        </div>
+      <div className="w-[520px] max-w-[92vw] rounded-lg border border-border bg-popover p-5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-1 text-lg font-semibold">Percorsi programmi esterni</h3>
+        {mobile ? (
+          <>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Su tablet e smartphone (Android/iOS) i percorsi non servono: toccando l'icona di un programma si apre il menu di condivisione del sistema ("Apri in...") e scegli direttamente l'app installata, ad esempio Lightroom o Photoshop Express.
+            </p>
+            <div className="flex justify-end">
+              <button onClick={onClose} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground">Ho capito</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Windows / Mac: seleziona il file del programma (.exe o .app) con "Sfoglia...". Il percorso viene ricordato per le sessioni successive. Nel browser viene letto solo il nome del file; il percorso completo e disponibile nella versione desktop.
+            </p>
+            {apps.map((a) => (
+              <label key={a} className="mb-3 block text-sm">
+                {a}
+                <div className="mt-1 flex gap-2">
+                  <input
+                    value={vals[a]}
+                    placeholder={a.startsWith("Adobe") ? `C:\\Program Files\\Adobe\\${a}\\ oppure /Applications/${a}.app` : a.includes("Giga") ? "C:\\Program Files\\Topaz Labs LLC\\Topaz Gigapixel AI" : "/Applications/Topaz Photo AI.app"}
+                    onChange={(e) => setVals((v) => ({ ...v, [a]: e.target.value }))}
+                    className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2"
+                  />
+                  <button type="button" onClick={() => browse(a)} className="shrink-0 rounded-md border border-border bg-secondary px-3 py-2 text-sm">Sfoglia...</button>
+                </div>
+              </label>
+            ))}
+            <div className="flex justify-end gap-2">
+              <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm">Annulla</button>
+              <button
+                onClick={() => { apps.forEach((a) => localStorage.setItem(`loma.topaz.${a}`, vals[a] ?? "")); onClose(); }}
+                className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
+              >
+                Salva
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
