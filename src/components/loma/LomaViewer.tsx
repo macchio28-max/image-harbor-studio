@@ -824,15 +824,27 @@ export function LomaViewer() {
           }}
         >
           {img && (
-            <button
+            <div
               onPointerDown={(e) => e.stopPropagation()}
               onDoubleClick={(e) => e.stopPropagation()}
-              onClick={toggleFullscreen}
-              title={isFull ? "Esci da schermo intero" : "Schermo intero"}
-              className="no-drag absolute right-2 top-2 z-30 rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100"
+              className="no-drag absolute right-2 top-2 z-30 flex gap-1"
             >
-              {isFull ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </button>
+              {[
+                { t: "Copia negli appunti", i: <Copy className="h-4 w-4" />, f: async () => sonnerToast[(await copyToClipboard()) ? "success" : "error"]((await Promise.resolve(true)) && "") },
+              ].length && null}
+              <button onClick={async () => { const ok = await copyToClipboard(); ok ? sonnerToast.success("Immagine copiata negli appunti") : sonnerToast.error("Copia non riuscita"); }}
+                title="Copia negli appunti" className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
+                <Copy className="h-4 w-4" />
+              </button>
+              <button onClick={toggleFullscreen} title={isFull ? "Esci da schermo intero" : "Schermo intero"}
+                className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
+                {isFull ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </button>
+              <button onClick={closeAll} title="Chiudi immagine e sessione"
+                className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-destructive/80 hover:text-destructive-foreground hover:opacity-100">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           )}
           {!img ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
