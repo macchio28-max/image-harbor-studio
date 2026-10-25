@@ -513,7 +513,7 @@ export function LomaViewer() {
   return (
     <div className="flex h-dvh flex-col bg-toolbar text-foreground select-none">
       {/* Toolbar */}
-      <header className="flex items-stretch gap-1 overflow-x-auto border-b border-border bg-toolbar px-3 py-2">
+      <header className={`drag-region flex items-stretch gap-1 overflow-x-auto border-b border-border bg-toolbar px-3 py-2 ${(typeof window !== "undefined" && (window as any).lomaDesktop && /Mac/.test(navigator.platform)) ? "pl-20" : ""}`}>
         <div className="mr-2 flex shrink-0 items-center gap-2">
           <img src={logo.url} alt="LoMa VIEWER" className="h-12 w-12 rounded-full" />
           <div className="leading-none">
@@ -759,7 +759,7 @@ function Tool({ icon, label, onClick, active }: { icon: ReactNode; label: string
     <button
       onClick={onClick}
       title={label}
-      className={`flex w-[60px] shrink-0 flex-col items-center justify-start gap-1 rounded-md px-1 py-1 text-[10px] leading-tight hover:bg-accent ${active ? "bg-accent text-primary" : ""}`}
+      className={`no-drag flex w-[60px] shrink-0 flex-col items-center justify-start gap-1 rounded-md px-1 py-1 text-[10px] leading-tight hover:bg-accent ${active ? "bg-accent text-primary" : ""}`}
     >
       <span className="flex h-8 items-center justify-center text-lg [&_svg]:h-7 [&_svg]:w-7">{icon}</span>
       <span className="text-center">{label}</span>
