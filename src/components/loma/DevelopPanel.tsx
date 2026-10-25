@@ -192,7 +192,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function Slider({ label, value, min, max, step = 1, def, track, onChange }: {
-  label: string; value: number; min: number; max: number; step?: number; def: number; track?: string; onChange: (v: number) => void;
+  label: string; value: number; min: number; max: number; step?: number; def: number; track?: string | undefined; onChange: (v: number) => void;
 }) {
   const dec = step < 1 ? (step < 0.1 ? 2 : 1) : 0;
   return (
@@ -209,11 +209,11 @@ function Slider({ label, value, min, max, step = 1, def, track, onChange }: {
   );
 }
 
-function Histogram({ hist }: { hist: Uint32Array[] | null }) {
+function Histogram({ hist }: { hist: any[] | null }) {
   if (!hist) return <div className="h-24 rounded bg-background/60" />;
   let max = 1;
   for (const ch of hist) for (let i = 2; i < 254; i++) max = Math.max(max, ch[i]);
-  const path = (ch: Uint32Array) => {
+  const path = (ch: any) => {
     let p = "M0,100";
     for (let i = 0; i < 256; i++) p += ` L${i},${100 - Math.min(100, (ch[i] / max) * 100)}`;
     return p + " L255,100 Z";

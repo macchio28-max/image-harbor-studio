@@ -102,17 +102,17 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
   const bctx = base.getContext("2d", { willReadFrequently: true })!;
   bctx.drawImage(source, 0, 0, w, h);
   const img = bctx.getImageData(0, 0, w, h);
-  const d = img.data;
+  const d: any = img.data;
   const long = Math.max(w, h);
 
   const needLocal = a.clarity !== 0;
   const needStruct = a.structure !== 0;
-  const bClar = needLocal ? blurData(base, long * 0.015) : null;
-  const bStruct = needStruct ? blurData(base, long * 0.003 + 1) : null;
-  const bSharp = a.sharpAmount > 0 ? blurData(base, Math.max(0.3, a.sharpRadius * pxScale)) : null;
-  const bNr = a.nrLum > 0 || a.nrColor > 0 ? blurData(base, Math.max(0.6, 2 * pxScale)) : null;
+  const bClar: any = needLocal ? blurData(base, long * 0.015) : null;
+  const bStruct: any = needStruct ? blurData(base, long * 0.003 + 1) : null;
+  const bSharp: any = a.sharpAmount > 0 ? blurData(base, Math.max(0.3, a.sharpRadius * pxScale)) : null;
+  const bNr: any = a.nrLum > 0 || a.nrColor > 0 ? blurData(base, Math.max(0.6, 2 * pxScale)) : null;
 
-  const lut = toneLut(a);
+  const lut: any = toneLut(a);
   const mired = 1e6 / 5500 - 1e6 / a.kelvin;
   const s = mired / 100;
   const gr = Math.max(0, 1 + 0.2 * s), gb = Math.max(0, 1 - 0.2 * s), gg = Math.max(0, 1 - (a.tint / 100) * 0.3);
@@ -129,7 +129,7 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
   const nrL = a.nrLum / 100 * 0.85, nrC = a.nrColor / 100;
   const shA = a.sharpAmount / 100 * 2;
   const clar = a.clarity / 100 * 1.2, str = a.structure / 100 * 1.5;
-  const hist = wantHist ? [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)] : null;
+  const hist: any = wantHist ? [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)] : null;
 
   for (let y = 0; y < h; y++) {
     const dy = (y / h - 0.5) * 2;
@@ -200,7 +200,7 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
           hh = (hh + dh + 360) % 360; ss = clamp01(ss * (1 + ds)); const ll = clamp01(l + dl);
           const C = (1 - Math.abs(2 * ll - 1)) * ss, X = C * (1 - Math.abs(((hh / 60) % 2) - 1)), m = ll - C / 2;
           const sector = (hh / 60) | 0;
-          const [rr, gg2, bb] = [[C, X, 0], [X, C, 0], [0, C, X], [0, X, C], [X, 0, C], [C, 0, X]][sector % 6];
+          const [rr, gg2, bb]: any = [[C, X, 0], [X, C, 0], [0, C, X], [0, X, C], [X, 0, C], [C, 0, X]][sector % 6];
           r = rr + m; g = gg2 + m; b = bb + m;
         }
       }
@@ -225,7 +225,7 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
     }
   }
   bctx.putImageData(img, 0, 0);
-  return { canvas: base, hist };
+  return { canvas: base, hist: hist as Uint32Array[] | null };
 }
 
 /** Gray-world auto white balance and auto exposure measured on a source. */
@@ -235,7 +235,7 @@ export function autoMeasure(source: CanvasImageSource, w: number, h: number) {
   c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
   const ctx = c.getContext("2d", { willReadFrequently: true })!;
   ctx.drawImage(source, 0, 0, c.width, c.height);
-  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  const d: any = ctx.getImageData(0, 0, c.width, c.height).data;
   let mr = 0, mg = 0, mb = 0; const n = d.length / 4;
   for (let i = 0; i < d.length; i += 4) { mr += d[i]; mg += d[i + 1]; mb += d[i + 2]; }
   mr /= n * 255; mg /= n * 255; mb /= n * 255;
