@@ -272,7 +272,7 @@ export function LomaViewer() {
     notify("Ritaglio applicato all'esportazione.");
   };
 
-  const m = img?.meta ?? {};
+  const m: any = img?.meta ?? {};
   const lat = m.latitude as number | undefined, lon = m.longitude as number | undefined;
   const transform = `translate(${off.x}px, ${off.y}px) scale(${scale})`;
   const imgStyle = (filtered: boolean): React.CSSProperties => ({
