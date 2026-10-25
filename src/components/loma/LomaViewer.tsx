@@ -3,9 +3,10 @@ import {
   Save, MousePointer2, Hand, ZoomIn, ZoomOut, Columns2, SlidersHorizontal, Camera, Eraser,
   MessageCircle, Circle, Sparkles, Clapperboard, Gem, Maximize2, HardDrive, Cloud, CloudSun, Mail,
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
-  FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, LayoutGrid, Square,
+  FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, Repeat, LayoutGrid, Square,
 } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
+import { ConvertDialog } from "./ConvertDialog";
 import logo from "@/assets/loma-logo.png.asset.json";
 import {
   type Adjust, defaultAdjust, renderClean, download, baseName, formatBytes, exposure,
@@ -43,6 +44,7 @@ export function LomaViewer() {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [imgReady, setImgReady] = useState(0);
   const [topazOpen, setTopazOpen] = useState(false);
+  const [convOpen, setConvOpen] = useState(false);
   const [waAsk, setWaAsk] = useState(false);
   const [mailAsk, setMailAsk] = useState(false);
   const [hist, setHist] = useState<Uint32Array[] | null>(null);
@@ -772,6 +774,7 @@ export function LomaViewer() {
           <Tool icon={<B.LightroomIcon />} label="Lr" tip="Adobe Lightroom" onClick={() => topaz("Adobe Lightroom")} />
           <Tool icon={<B.LightroomClassicIcon />} label="Lrc" tip="Adobe Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
           <Tool icon={<Settings />} label="App" tip="Percorsi programmi" onClick={() => setTopazOpen(true)} />
+          <Tool icon={<Repeat />} label="Converti" tip="Converti immagini (singola o batch)" onClick={() => (img || session.length ? setConvOpen(true) : notify("Apri prima un'immagine"))} />
           <Tool icon={<Trash2 />} label="Cache" tip="Svuota cache e memoria" onClick={clearCache} />
         </Group>
         <Group last>
@@ -992,6 +995,7 @@ export function LomaViewer() {
         ref={(el) => { folderInput.current = el; el?.setAttribute("webkitdirectory", ""); el?.setAttribute("directory", ""); }}
         type="file" multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }}
       />
+      {convOpen && <ConvertDialog current={img?.file ?? null} preview={img?.url ?? null} size={img ? { w: img.w, h: img.h } : null} session={session} visible={visible} onClose={() => setConvOpen(false)} />}
       {topazOpen && <TopazSettings onClose={() => setTopazOpen(false)} />}
       {mailAsk && <MailChoice onClose={() => setMailAsk(false)} onPick={(m, u) => { setMailAsk(false); localStorage.setItem("loma.mail.mode", m); if (u) localStorage.setItem("loma.mail.url", u); mail(); }} />}
       {waAsk && (
