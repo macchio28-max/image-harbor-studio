@@ -1,7 +1,7 @@
 // LoMa VIEWER desktop shell (Electron).
 // Loads the app from LOMA_URL (e.g. http://localhost:8080 during development) or the published
 // URL (cached offline by its service worker) and exposes native IPC for dialogs and external programs.
-const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, session } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const os = require("os");
@@ -64,6 +64,17 @@ ipcMain.handle("loma:launchWithData", (_e, exe, fileName, bytes) => {
   const p = path.join(dir, path.basename(fileName || `loma-${Date.now()}.png`));
   fs.writeFileSync(p, Buffer.from(bytes));
   return { ...launch(exe, [p]), file: p };
+});
+ipcMain.handle("loma:clearCache", async () => {
+  const dir = path.join(os.tmpdir(), "loma-viewer");
+  let freed = 0;
+  const walk = (d) => { try { for (const f of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, f.name); if (f.isDirectory()) walk(p); else { try { freed += fs.statSync(p).size; } catch {} } } } catch {} };
+  walk(dir);
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+  try { freed += await session.defaultSession.getCacheSize(); } catch {}
+  await session.defaultSession.clearCache();
+  await session.defaultSession.clearStorageData({ storages: ["serviceworkers", "cachestorage"] });
+  return { ok: true, freed };
 });
 ipcMain.handle("loma:openPath", (_e, p) => shell.openPath(p));
 

@@ -3,8 +3,9 @@ import {
   Save, MousePointer2, Hand, ZoomIn, ZoomOut, Columns2, SlidersHorizontal, Camera, Eraser,
   MessageCircle, Circle, Sparkles, Clapperboard, Gem, Maximize2, HardDrive, Cloud, CloudSun, Mail,
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
-  FlipHorizontal, Crop, X, Settings, GalleryHorizontal,
+  FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2,
 } from "lucide-react";
+import { toast as sonnerToast } from "sonner";
 import logo from "@/assets/loma-logo.png.asset.json";
 import {
   type Adjust, defaultAdjust, renderClean, download, baseName, formatBytes, exposure,
@@ -179,6 +180,20 @@ export function LomaViewer() {
       const res = await Promise.all(chunk.map((c) => readCull(c.file)));
       setSession((s) => s.map((x) => { const k = chunk.findIndex((c) => c.id === x.id); return k < 0 ? x : { ...x, ...res[k] }; }));
     }
+  };
+
+  const clearCache = async () => {
+    session.forEach((s) => s.thumb?.startsWith("blob:") && URL.revokeObjectURL(s.thumb));
+    setSession((s) => s.map((x) => ({ ...x, thumb: null })));
+    let extra = "";
+    const desk = (window as any).lomaDesktop;
+    if (desk?.clearCache) {
+      try {
+        const r = await desk.clearCache();
+        if (r?.freed) extra = ` (${formatBytes(r.freed)} liberati)`;
+      } catch { /* ignore */ }
+    }
+    sonnerToast.success("Cache e memoria temporanea svuotate con successo!" + extra);
   };
 
   const sendBatch = async () => {
@@ -519,6 +534,7 @@ export function LomaViewer() {
           <Tool icon={<B.LightroomIcon />} label="Lightroom" onClick={() => topaz("Adobe Lightroom")} />
           <Tool icon={<B.LightroomClassicIcon />} label="Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
           <Tool icon={<Settings />} label="Percorsi" onClick={() => setTopazOpen(true)} />
+          <Tool icon={<Trash2 />} label="Svuota Cache e Memoria" onClick={clearCache} />
           <span className="mx-1 w-px shrink-0 self-stretch bg-border" />
           <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
           <Tool icon={<B.OneDriveIcon />} label="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
