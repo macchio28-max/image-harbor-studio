@@ -64,13 +64,13 @@ export function graftJpegMeta(src: Uint8Array, out: Uint8Array): Uint8Array {
   if (src[0] !== 0xff || src[1] !== 0xd8 || out[0] !== 0xff || out[1] !== 0xd8) return out;
   const segs: Uint8Array[] = [];
   for (let i = 2; i + 4 < src.length && src[i] === 0xff;) {
-    const m = src[i + 1], len = (src[i + 2] << 8) | src[i + 3];
+    const m = src[i + 1]!, len = (src[i + 2]! << 8) | src[i + 3]!;
     if (m === 0xda) break;
     if (m === 0xe1 || m === 0xe2) segs.push(src.subarray(i, i + 2 + len));
     i += 2 + len;
   }
   let p = 2; // skip encoder's own APP0 (JFIF)
-  if (out[2] === 0xff && out[3] === 0xe0) p = 4 + ((out[4] << 8) | out[5]);
+  if (out[2] === 0xff && out[3] === 0xe0) p = 4 + ((out[4]! << 8) | out[5]!);
   const total = 2 + segs.reduce((s, x) => s + x.length, 0) + out.length - p;
   const r = new Uint8Array(total); r[0] = 0xff; r[1] = 0xd8;
   let o = 2; for (const s of segs) { r.set(s, o); o += s.length; }
