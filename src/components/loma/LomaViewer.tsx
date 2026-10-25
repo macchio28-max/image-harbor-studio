@@ -16,6 +16,7 @@ import { isNeutral } from "./develop";
 import * as B from "./brand-icons";
 import { DevelopPanel } from "./DevelopPanel";
 import { Filmstrip } from "./Filmstrip";
+import { ComparePane } from "./ComparePane";
 import { ContactSheet } from "./ContactSheet";
 import { type CullItem, type CullFilter, IMAGE_RE, readCull, applyFilter } from "./culling";
 import { developCanvas, autoMeasure } from "./develop";
@@ -36,7 +37,8 @@ export function LomaViewer() {
   const [crop, setCrop] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [sel, setSel] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [compare, setCompare] = useState(false);
-  const [split, setSplit] = useState(50);
+  const [active, setActive] = useState<"A" | "B">("A");
+  const [other, setOther] = useState<{ img: Loaded | null; adjust: Adjust; crop: typeof crop; scale: number; off: { x: number; y: number }; curId: string | null; snap: string | null } | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [imgReady, setImgReady] = useState(0);
   const [topazOpen, setTopazOpen] = useState(false);
@@ -166,6 +168,21 @@ export function LomaViewer() {
   const swipe = useRef<{ x: number; y: number } | null>(null);
   const fitScale = useRef(1);
   const visible = applyFilter(session, filter);
+
+  const swapActive = () => {
+    let snap: string | null = null;
+    try { if (img && preview.current) snap = preview.current.toDataURL("image/jpeg", 0.9); } catch { /* ignore */ }
+    const o = other;
+    setOther({ img, adjust, crop, scale, off, curId, snap });
+    setActive((a) => (a === "A" ? "B" : "A"));
+    setImg(o?.img ?? null);
+    setAdjust(o?.adjust ?? defaultAdjust);
+    setCrop(o?.crop ?? null);
+    setSel(null);
+    setCurId(o?.curId ?? null);
+    if (o?.img) { setScale(o.scale); setOff(o.off); }
+  };
+  useEffect(() => { requestAnimationFrame(() => fit()); }, [compare]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectItem = (id: string) => {
     const it = session.find((s) => s.id === id);
@@ -583,8 +600,8 @@ export function LomaViewer() {
             </div>
             <div className="flex items-center gap-0.5">
               <ZBtn onClick={() => setZoom(1)}>1:1</ZBtn>
-              <ZBtn onClick={() => setZoom(0.5)}>1:2</ZBtn>
-              <ZBtn onClick={() => setZoom(1 / 3)}>1:3</ZBtn>
+              <ZBtn onClick={() => setZoom(2)}>1:2</ZBtn>
+              <ZBtn onClick={() => setZoom(3)}>1:3</ZBtn>
               <ZBtn onClick={() => fit()}>Fit</ZBtn>
             </div>
           </div>
@@ -631,15 +648,17 @@ export function LomaViewer() {
           />
         )}
         {/* Canvas */}
+        <div className="flex min-w-0 flex-1 gap-2">
+        {compare && active === "B" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="A" onActivate={swapActive} />}
         <main
           ref={stage}
-          className={`relative min-w-0 flex-1 touch-none overflow-hidden rounded-lg border bg-canvas ${drag ? "border-primary" : "border-border"} ${img ? (mode === "move" ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair") : ""}`}
+          className={`relative min-w-0 flex-1 touch-none overflow-hidden rounded-lg border bg-canvas ${drag || compare ? "border-primary" : "border-border"} ${img ? (mode === "move" ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair") : ""}`}
           onPointerDown={onDown}
           onPointerMove={onMove}
           onPointerUp={onUp}
           onPointerCancel={onUp}
           onDoubleClick={(e) => {
-            if (!img || compare) return;
+            if (!img) return;
             if ((e.target as HTMLElement).closest("button")) return;
             setSel(null);
             if (scale >= 0.999) { fit(); return; }
@@ -694,10 +713,10 @@ export function LomaViewer() {
             </div>
           ) : (
             <>
-              <div className="absolute inset-0" style={{ clipPath: compare ? `inset(0 ${100 - split}% 0 0)` : undefined }}>
+              <div className="absolute inset-0" >
                 <img src={img.url} alt="" draggable={false} className="absolute left-0 top-0 max-w-none" style={imgStyle(false)} />
               </div>
-              <div className="absolute inset-0" style={{ clipPath: compare ? `inset(0 0 0 ${split}%)` : undefined }}>
+              <div className="absolute inset-0" >
                 <div className="absolute left-0 top-0" style={{ width: img.w, height: img.h, transformOrigin: "0 0", transform }}>
                   <div style={rotStyle}>
                     <img ref={imgEl} src={img.url} alt={img.file.name} draggable={false} onLoad={() => setImgReady((n) => n + 1)} className="hidden" />
@@ -706,18 +725,7 @@ export function LomaViewer() {
                 </div>
               </div>
               {compare && (
-                <div className="absolute inset-y-0 z-10 w-0.5 bg-primary" style={{ left: `${split}%` }}>
-                  <span className="absolute left-2 top-2 whitespace-nowrap rounded bg-popover/80 px-2 py-0.5 text-xs">Modificata</span>
-                  <span className="absolute right-2 top-2 whitespace-nowrap rounded bg-popover/80 px-2 py-0.5 text-xs">Originale</span>
-                </div>
-              )}
-              {compare && (
-                <input
-                  type="range" min={0} max={100} value={split}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onChange={(e) => setSplit(+e.target.value)}
-                  className="absolute bottom-12 left-1/2 z-20 w-1/2 -translate-x-1/2 accent-primary"
-                />
+                <span className="absolute left-2 top-2 z-20 rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground">{active} · attiva · {img.file.name}</span>
               )}
               {sel && (
                 <div
@@ -744,6 +752,8 @@ export function LomaViewer() {
             <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} />
           )}
         </main>
+        {compare && active === "A" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="B" onActivate={swapActive} />}
+        </div>
 
         {/* Side panel */}
         <aside className="hidden w-80 shrink-0 overflow-y-auto rounded-lg border border-border bg-card md:block">
