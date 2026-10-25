@@ -10,5 +10,6 @@ contextBridge.exposeInMainWorld("lomaDesktop", {
   launchApp: (exe, files) => ipcRenderer.invoke("loma:launchApp", exe, files),
   launchWithData: async (exe, fileName, blob) =>
     ipcRenderer.invoke("loma:launchWithData", exe, fileName, new Uint8Array(await blob.arrayBuffer())),
+  clearCache: () => ipcRenderer.invoke("loma:clearCache"),
   openPath: (p) => ipcRenderer.invoke("loma:openPath", p),
 });
