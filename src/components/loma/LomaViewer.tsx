@@ -43,6 +43,7 @@ export function LomaViewer() {
   const [imgReady, setImgReady] = useState(0);
   const [topazOpen, setTopazOpen] = useState(false);
   const [waAsk, setWaAsk] = useState(false);
+  const [mailAsk, setMailAsk] = useState(false);
   const [hist, setHist] = useState<Uint32Array[] | null>(null);
   const preview = useRef<HTMLCanvasElement>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -498,6 +499,44 @@ export function LomaViewer() {
     else sonnerToast.error("Copia non riuscita: trascina la foto nella chat di WhatsApp.");
   };
 
+  // Mail: desktop mail app or webmail (remembered), photo copied to clipboard for pasting.
+  const mail = async () => {
+    if (isTouchDevice()) return share("Mail", "mailto:?subject=Immagine%20da%20LoMa%20VIEWER");
+    if (!img) { notify("Apri prima un'immagine da inviare per email."); return; }
+    const mode = localStorage.getItem("loma.mail.mode");
+    if (!mode) { setMailAsk(true); return; }
+    const desk = (window as any).lomaDesktop;
+    const ok = await copyToClipboard();
+    if (mode === "app") {
+      let p = localStorage.getItem("loma.topaz.Mail") || "";
+      if (!p && desk?.pickApp) { p = (await desk.pickApp("Mail")) || ""; if (p) localStorage.setItem("loma.topaz.Mail", p); }
+      if (p && desk?.launchApp) {
+        const r = await desk.launchApp(p, []);
+        if (!r?.ok) { localStorage.removeItem("loma.topaz.Mail"); notify("App di posta non trovata: premi di nuovo e selezionala."); return; }
+      } else window.location.href = "mailto:?subject=Immagine%20da%20LoMa%20VIEWER";
+    } else {
+      const u = localStorage.getItem("loma.mail.url") || "https://mail.google.com/mail/u/0/#inbox?compose=new";
+      if (desk?.openExternal) desk.openExternal(u); else window.open(u, "_blank", "noopener");
+    }
+    const paste = /Mac/.test(navigator.platform) ? "⌘V" : "Ctrl+V";
+    if (ok) sonnerToast.success(`Immagine copiata. Crea un nuovo messaggio e premi ${paste} per incollarla.`, { duration: 8000 });
+    else sonnerToast.error("Copia non riuscita: allega la foto trascinandola nel messaggio.");
+  };
+
+  // AirDrop: macOS desktop uses the native share menu (AirDrop, Messaggi...); tablet/Safari use the Web Share sheet.
+  const airdrop = async () => {
+    if (!img || !imgEl.current) { notify("Apri prima un'immagine da inviare con AirDrop."); return; }
+    const desk = (window as any).lomaDesktop;
+    if (desk?.shareFile && desk.platform === "darwin") {
+      const f = await outputFile();
+      const disk: string = (f === img.file && ((f as any).lomaPath || desk.getPathForFile?.(f))) || "";
+      const r = await desk.shareFile(disk || f, f.name);
+      if (!r?.ok) notify("Condivisione macOS non disponibile.");
+      return;
+    }
+    return share("AirDrop");
+  };
+
   const share = async (target: string, fallback?: string) => {
     if (img && imgEl.current) {
       const b = await renderClean(imgEl.current, adjust, crop, "image/png");
@@ -684,12 +723,12 @@ export function LomaViewer() {
         </div>
         <div className="no-drag flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 py-1"><div className="flex w-full items-stretch gap-0.5">
         <Group>
-          <Tool icon={<HardDrive className="text-primary" />} label="Importa" onClick={() => folderInput.current?.click()} />
-          <Tool icon={<Images />} label="Multipli" onClick={() => multiInput.current?.click()} />
-          <Tool icon={<GalleryHorizontal />} label="Filmstrip" active={stripOpen && session.length > 0} onClick={() => setStripOpen((o) => !o)} />
+          <Tool icon={<HardDrive className="text-primary" />} label="Importa" tip="Importa scheda / cartella" onClick={() => folderInput.current?.click()} />
+          <Tool icon={<Images />} label="Apri" tip="Apri più file" onClick={() => multiInput.current?.click()} />
+          <Tool icon={<GalleryHorizontal />} label="Strip" tip="Filmstrip" active={stripOpen && session.length > 0} onClick={() => setStripOpen((o) => !o)} />
           <Tool icon={view === "grid" ? <Square /> : <LayoutGrid />} label={view === "grid" ? "Singola" : "Griglia"} active={view === "grid"} onClick={() => session.length ? (view === "grid" ? openLoupe() : setView("grid")) : notify("Importa prima più foto.")} />
           <Tool icon={<Save className="text-primary" />} label="Salva" onClick={save} />
-          <Tool icon={<MousePointer2 />} label="Seleziona" active={mode === "select"} onClick={() => setMode("select")} />
+          <Tool icon={<MousePointer2 />} label="Area" tip="Seleziona area" active={mode === "select"} onClick={() => setMode("select")} />
           <Tool icon={<Hand />} label="Sposta" active={mode === "move"} onClick={() => setMode("move")} />
         </Group>
         <Group>
@@ -706,10 +745,10 @@ export function LomaViewer() {
               <ZBtn onClick={() => fit()}>Fit</ZBtn>
             </div>
           </div>
-          <Tool icon={<Columns2 />} label="Confronta" active={compare} onClick={() => setCompare((c) => !c)} />
-          <Tool icon={<SlidersHorizontal className="text-primary" />} label="Strumenti" active={toolsOpen} onClick={() => setToolsOpen((o) => !o)} />
-          <Tool icon={<Camera />} label="Screenshot" onClick={screenshot} />
-          <Tool icon={<Eraser className="text-chart-3" />} label="No meta" onClick={deepClean} />
+          <Tool icon={<Columns2 />} label="A / B" tip="Confronta due foto" active={compare} onClick={() => setCompare((c) => !c)} />
+          <Tool icon={<SlidersHorizontal className="text-primary" />} label="Sviluppo" tip="Pannello strumenti di sviluppo" active={toolsOpen} onClick={() => setToolsOpen((o) => !o)} />
+          <Tool icon={<Camera />} label="Cattura" tip="Screenshot a risoluzione nativa" onClick={screenshot} />
+          <Tool icon={<Eraser className="text-chart-3" />} label="Pulisci" tip="Rimuovi tutti i metadati" onClick={deepClean} />
         </Group>
         <Group>
           <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/")} />
@@ -718,22 +757,22 @@ export function LomaViewer() {
           <Tool icon={<B.FlowIcon />} label="Flow" onClick={() => openAI("Flow", "https://labs.google/fx/tools/flow")} />
         </Group>
         <Group>
-          <Tool icon={<B.TopazPhotoIcon />} label="Photo AI" onClick={() => topaz("Topaz Photo AI")} />
-          <Tool icon={<B.TopazGigapixelIcon />} label="Gigapixel" onClick={() => topaz("Topaz Gigapixel AI")} />
-          <Tool icon={<B.PhotoshopIcon />} label="Photoshop" onClick={() => topaz("Adobe Photoshop")} />
-          <Tool icon={<B.LightroomIcon />} label="Lightroom" onClick={() => topaz("Adobe Lightroom")} />
-          <Tool icon={<B.LightroomClassicIcon />} label="Lr Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
-          <Tool icon={<Settings />} label="Percorsi" onClick={() => setTopazOpen(true)} />
-          <Tool icon={<Trash2 />} label="Cache" onClick={clearCache} />
+          <Tool icon={<B.TopazPhotoIcon />} label="Topaz" tip="Topaz Photo AI" onClick={() => topaz("Topaz Photo AI")} />
+          <Tool icon={<B.TopazGigapixelIcon />} label="Giga" tip="Topaz Gigapixel AI" onClick={() => topaz("Topaz Gigapixel AI")} />
+          <Tool icon={<B.PhotoshopIcon />} label="Ps" tip="Adobe Photoshop" onClick={() => topaz("Adobe Photoshop")} />
+          <Tool icon={<B.LightroomIcon />} label="Lr" tip="Adobe Lightroom" onClick={() => topaz("Adobe Lightroom")} />
+          <Tool icon={<B.LightroomClassicIcon />} label="Lrc" tip="Adobe Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
+          <Tool icon={<Settings />} label="App" tip="Percorsi programmi" onClick={() => setTopazOpen(true)} />
+          <Tool icon={<Trash2 />} label="Cache" tip="Svuota cache e memoria" onClick={clearCache} />
         </Group>
         <Group last>
           <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
-          <Tool icon={<B.OneDriveIcon />} label="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
+          <Tool icon={<B.OneDriveIcon />} label="OneDrv" tip="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
           <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => uploadCloud("iCloud Drive", "https://www.icloud.com/iclouddrive/")} />
-          <Tool icon={<B.MailIcon />} label="Mail" onClick={() => share("Mail", "mailto:?subject=Immagine%20da%20LoMa%20VIEWER")} />
-          <Tool icon={<B.WhatsAppIcon />} label="WhatsApp" onClick={() => whatsapp()} />
-          <Tool icon={<B.AirDropIcon />} label="AirDrop" onClick={() => share("AirDrop")} />
-          <Tool icon={<B.LocalSendIcon />} label="LocalSend" onClick={() => topaz("LocalSend")} />
+          <Tool icon={<B.MailIcon />} label="Mail" onClick={() => mail()} />
+          <Tool icon={<B.WhatsAppIcon />} label="WApp" tip="WhatsApp" onClick={() => whatsapp()} />
+          <Tool icon={<B.AirDropIcon />} label="AirDrop" onClick={() => airdrop()} />
+          <Tool icon={<B.LocalSendIcon />} label="LSend" tip="LocalSend" onClick={() => topaz("LocalSend")} />
         </Group>
         </div></div>
       </header>
@@ -936,6 +975,7 @@ export function LomaViewer() {
         type="file" multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }}
       />
       {topazOpen && <TopazSettings onClose={() => setTopazOpen(false)} />}
+      {mailAsk && <MailChoice onClose={() => setMailAsk(false)} onPick={(m, u) => { setMailAsk(false); localStorage.setItem("loma.mail.mode", m); if (u) localStorage.setItem("loma.mail.url", u); mail(); }} />}
       {waAsk && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 p-4" onClick={() => setWaAsk(false)}>
           <div className="w-full max-w-sm rounded-lg border border-border bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -956,11 +996,11 @@ function Group({ children, last }: { children: ReactNode; last?: boolean }) {
   return <div className={`flex flex-[1_1_auto] items-stretch justify-between gap-px pr-1 ${last ? "" : "mr-0.5 border-r border-border"}`}>{children}</div>;
 }
 
-function Tool({ icon, label, onClick, active }: { icon: ReactNode; label: string; onClick: () => void; active?: boolean }) {
+function Tool({ icon, label, onClick, active, tip }: { icon: ReactNode; label: string; onClick: () => void; active?: boolean; tip?: string }) {
   return (
     <button
       onClick={onClick}
-      title={label}
+      title={tip ?? label}
       className={`no-drag flex min-w-[34px] max-w-[64px] flex-1 flex-col items-center justify-start gap-0.5 rounded px-0.5 py-0.5 text-[clamp(8px,0.62vw,10.5px)] leading-tight hover:bg-accent ${active ? "bg-accent text-primary" : ""}`}
     >
       <span className="flex h-6 items-center justify-center text-sm [&_svg]:h-[clamp(16px,1.25vw,22px)] [&_svg]:w-[clamp(16px,1.25vw,22px)]">{icon}</span>
