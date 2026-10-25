@@ -11,6 +11,7 @@ import {
   type Adjust, defaultAdjust, renderClean, download, baseName, formatBytes, exposure,
   nativeScreenSize,
 } from "./viewer-utils";
+import { isNeutral } from "./develop";
 
 import * as B from "./brand-icons";
 import { DevelopPanel } from "./DevelopPanel";
@@ -203,9 +204,10 @@ export function LomaViewer() {
   useEffect(() => {
     const desk = (window as any).lomaDesktop;
     if (!desk?.getInitialFile) return;
-    const load = (f: { name: string; bytes: Uint8Array } | null) => {
+    const load = (f: { name: string; path?: string; bytes: Uint8Array } | null) => {
       if (!f) return;
       const file = new File([f.bytes as BlobPart], f.name);
+      if (f.path) (file as any).lomaPath = f.path;
       const dt = new DataTransfer();
       dt.items.add(file);
       importRef.current(dt.files);
@@ -491,16 +493,32 @@ export function LomaViewer() {
         if (path) localStorage.setItem(`loma.topaz.${app}`, path);
       }
       if (!path) { notify(`Seleziona il programma ${app} per aprire la foto.`); return; }
-      const b = await renderClean(imgEl.current!, adjust, crop, "image/png");
-      let r = await desk.launchWithData(path, `${baseName(img!.file.name)}_for_${app.replace(/\s/g, "")}.png`, b);
+      const file = img!.file;
+      const disk: string = (file as any).lomaPath || (desk.getPathForFile?.(file) ?? "");
+      const isRaw = /\.(cr2|cr3|crw|nef|nrw|arw|srf|sr2|dng|orf|rw2|raf|pef|srw|3fr|iiq|erf|kdc|mef|mos|mrw|x3f|rwl)$/i.test(file.name);
+      const edited = !isNeutral(adjust) || !!crop || adjust.rotation !== 0 || adjust.flipH || adjust.straighten !== 0;
+      const useOriginal = !!disk && (isRaw || !edited);
+      const fname = `${baseName(file.name)}_for_${app.replace(/\s/g, "")}.png`;
+      let b: Blob | null = null;
+      const send = async (exe: string) => {
+        if (useOriginal) return desk.launchApp(exe, [disk]);
+        b ??= await renderClean(imgEl.current!, adjust, crop, "image/png");
+        return desk.launchWithData(exe, fname, b);
+      };
+      let r = await send(path);
       if (!r?.ok && r?.error === "not-found" && desk.pickApp) {
         notify(`${app} non trovato: seleziona di nuovo il programma.`);
         const np = await desk.pickApp(app);
         if (!np) return;
         localStorage.setItem(`loma.topaz.${app}`, np);
-        r = await desk.launchWithData(np, `${baseName(img!.file.name)}_for_${app.replace(/\s/g, "")}.png`, b);
+        r = await send(np);
       }
-      notify(r?.ok ? `Foto aperta in ${app}.` : `Impossibile avviare ${app}.`);
+      if (!r?.ok) { notify(`Impossibile avviare ${app}.`); return; }
+      if (isRaw && useOriginal) {
+        const acr = /photoshop/i.test(app) ? " (apertura in Camera Raw)" : "";
+        notify(`File RAW originale inviato a ${app}${acr}${edited ? ". Le regolazioni di LoMa non vengono applicate al RAW." : "."}`);
+      } else if (useOriginal) notify(`Immagine originale aperta in ${app}.`);
+      else notify(disk ? `Versione modificata inviata a ${app}.` : `Copia dell'immagine inviata a ${app} (file originale non disponibile su disco).`);
       return;
     }
     await exportClean("image/png", `_for_${app.replace(/\s/g, "")}`);
