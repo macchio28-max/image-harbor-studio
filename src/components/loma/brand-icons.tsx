@@ -127,3 +127,13 @@ export const LocalSendIcon = (p: P) => (
     <circle cx="12" cy="12" r="3" fill="#fff" />
   </S>
 );
+
+const AdobeTile = ({ bg, fg, text, ...p }: P & { bg: string; fg: string; text: string }) => (
+  <S {...p}>
+    <rect width="24" height="24" rx="5" fill={bg} />
+    <text x="12" y="16.2" textAnchor="middle" fontSize={text.length > 2 ? 8.5 : 11} fontWeight="700" fontFamily="Helvetica, Arial, sans-serif" fill={fg}>{text}</text>
+  </S>
+);
+export const PhotoshopIcon = (p: P) => <AdobeTile {...p} bg="#001e36" fg="#31a8ff" text="Ps" />;
+export const LightroomIcon = (p: P) => <AdobeTile {...p} bg="#001e36" fg="#31a8ff" text="Lr" />;
+export const LightroomClassicIcon = (p: P) => <AdobeTile {...p} bg="#001e36" fg="#31a8ff" text="Lrc" />;

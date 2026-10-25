@@ -347,6 +347,9 @@ export function LomaViewer() {
           <span className="mx-1 w-px shrink-0 self-stretch bg-border" />
           <Tool icon={<B.TopazPhotoIcon />} label="Topaz Photo AI" onClick={() => topaz("Topaz Photo AI")} />
           <Tool icon={<B.TopazGigapixelIcon />} label="Topaz Gigapixel AI" onClick={() => topaz("Topaz Gigapixel AI")} />
+          <Tool icon={<B.PhotoshopIcon />} label="Photoshop" onClick={() => topaz("Adobe Photoshop")} />
+          <Tool icon={<B.LightroomIcon />} label="Lightroom" onClick={() => topaz("Adobe Lightroom")} />
+          <Tool icon={<B.LightroomClassicIcon />} label="Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
           <Tool icon={<Settings />} label="Percorsi" onClick={() => setTopazOpen(true)} />
           <span className="mx-1 w-px shrink-0 self-stretch bg-border" />
           <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
@@ -588,21 +591,21 @@ function Rows({ rows }: { rows: [string, unknown][] }) {
 }
 
 function TopazSettings({ onClose }: { onClose: () => void }) {
-  const apps = ["Topaz Photo AI", "Topaz Gigapixel AI"];
+  const apps = ["Topaz Photo AI", "Topaz Gigapixel AI", "Adobe Photoshop", "Adobe Lightroom", "Adobe Lightroom Classic"];
   const [vals, setVals] = useState(() => Object.fromEntries(apps.map((a) => [a, localStorage.getItem(`loma.topaz.${a}`) ?? ""])));
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70" onClick={onClose}>
       <div className="w-[420px] rounded-lg border border-border bg-popover p-5" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-1 text-lg font-semibold">Programmi esterni</h3>
         <p className="mb-4 text-sm text-muted-foreground">
-          Percorsi dei programmi Topaz. Nel browser l'immagine viene esportata pronta da aprire; nella versione desktop viene usato il percorso.
+          Percorsi dei programmi Topaz e Adobe. Nel browser l'immagine viene esportata pronta da aprire; nella versione desktop viene usato il percorso.
         </p>
         {apps.map((a) => (
           <label key={a} className="mb-3 block text-sm">
             {a}
             <input
               value={vals[a]}
-              placeholder={a.includes("Giga") ? "C:\\Program Files\\Topaz Labs LLC\\Topaz Gigapixel AI" : "/Applications/Topaz Photo AI.app"}
+              placeholder={a.startsWith("Adobe") ? `C:\\Program Files\\Adobe\\${a}\\ oppure /Applications/${a}.app` : a.includes("Giga") ? "C:\\Program Files\\Topaz Labs LLC\\Topaz Gigapixel AI" : "/Applications/Topaz Photo AI.app"}
               onChange={(e) => setVals((v) => ({ ...v, [a]: e.target.value }))}
               className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2"
             />
