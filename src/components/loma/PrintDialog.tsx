@@ -57,7 +57,7 @@ export function drawSheet(img: HTMLImageElement, o: PrintOpts, pxPerMm: number):
       place(x, y, tw, th, true);
       if (o.marks) {
         const L = 2;
-        for (const [px, py] of [[x, y], [x + tw, y], [x, y + th], [x + tw, y + th]]) {
+        for (const [px, py] of [[x, y], [x + tw, y], [x, y + th], [x + tw, y + th]] as [number, number][]) {
           const sx = px === x ? -1 : 1, sy = py === y ? -1 : 1;
           ctx.beginPath();
           ctx.moveTo(px * pxPerMm, py * pxPerMm); ctx.lineTo((px + sx * L) * pxPerMm, py * pxPerMm);
