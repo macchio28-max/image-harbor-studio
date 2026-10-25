@@ -581,7 +581,7 @@ export function LomaViewer() {
             <div className="text-[9px] font-bold tracking-[0.2em] text-primary">VIEWER</div>
           </div>
         </div>
-        <div className="no-drag flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 py-1"><div className="flex min-w-max flex-1 items-stretch gap-0.5">
+        <div className="no-drag flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 py-1"><div className="flex w-full items-stretch gap-0.5">
         <Group>
           <Tool icon={<HardDrive className="text-primary" />} label="Importa" onClick={() => folderInput.current?.click()} />
           <Tool icon={<Images />} label="Multipli" onClick={() => multiInput.current?.click()} />
