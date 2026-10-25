@@ -369,8 +369,10 @@ export function LomaViewer() {
   };
 
   const save = async () => {
-    await exportClean("image/png", "_loma");
-    notify("Immagine salvata.");
+    if (!need()) return;
+    const f = await outputFile("_loma");
+    download(f, f.name);
+    notify(f === img!.file ? `Salvato file originale: ${f.name}` : "Immagine modificata salvata.");
   };
   const deepClean = async () => {
     const isJpg = img && /jpe?g/i.test(img.file.type);
@@ -468,29 +470,41 @@ export function LomaViewer() {
   };
 
   // Cloud = save the shown (edited, metadata-free) photo INTO the user's cloud space.
+  const isEdited = () => !isNeutral(adjust) || !!crop || adjust.rotation !== 0 || adjust.flipH || adjust.straighten !== 0;
+  /** Original file (name + extension) when unedited; edited PNG otherwise. */
+  const outputFile = async (suffix = ""): Promise<File> => {
+    if (!isEdited()) return img!.file;
+    const b = await renderClean(imgEl.current!, adjust, crop, "image/png");
+    return new File([b], `${baseName(img!.file.name)}${suffix}.png`, { type: "image/png" });
+  };
+
   const uploadCloud = async (target: string, web: string) => {
+    if (target !== "iCloud Drive") {
+      // Drive / OneDrive: open the user's cloud in the default browser.
+      const desk = (window as any).lomaDesktop;
+      if (desk?.openExternal) desk.openExternal(web); else window.open(web, "_blank", "noopener");
+      notify(`${target} aperto nel browser.`);
+      return;
+    }
     if (!img || !imgEl.current) { notify(`Carica prima un'immagine da salvare su ${target}.`); return; }
-    notify(`Preparazione caricamento su ${target}...`);
-    const b = await renderClean(imgEl.current, adjust, crop, "image/png");
-    const name = `${baseName(img.file.name)}.png`;
+    const f = await outputFile();
     const picker = (window as any).showSaveFilePicker;
     if (picker) {
-      // Desktop with the cloud sync app installed: the user picks the cloud folder, the file is written there.
+      // Finder save dialog: iCloud Drive is in the sidebar.
       try {
-        const h = await picker({ suggestedName: name, startIn: "documents", types: [{ description: "PNG", accept: { "image/png": [".png"] } }] });
-        notify(`Caricamento su ${target} in corso...`);
-        const w = await h.createWritable(); await w.write(b); await w.close();
-        notify(`Salvato su ${target}: ${h.name}`);
+        const ext = f.name.split(".").pop() || "";
+        const h = await picker({ suggestedName: f.name, ...(ext ? { types: [{ description: ext.toUpperCase(), accept: { [f.type || "application/octet-stream"]: ["." + ext] } }] } : {}) });
+        const w = await h.createWritable(); await w.write(f); await w.close();
+        notify(`Salvato: ${h.name}`);
         return;
-      } catch (e: any) { if (e?.name === "AbortError") { notify("Caricamento annullato."); return; } }
+      } catch (e: any) { if (e?.name === "AbortError") { notify("Salvataggio annullato."); return; } }
     }
-    const f = new File([b], name, { type: "image/png" });
     if (navigator.canShare?.({ files: [f] })) {
-      try { await navigator.share({ files: [f], title: name }); notify(`Inviato a ${target}.`); return; } catch { notify("Caricamento annullato."); return; }
+      try { await navigator.share({ files: [f], title: f.name }); notify(`Inviato a ${target}.`); return; } catch { notify("Salvataggio annullato."); return; }
     }
-    download(b, name);
+    download(f, f.name);
     window.open(web, "_blank", "noopener");
-    notify(`Accedi a ${target}, scegli la cartella e trascina ${name} per salvarla.`);
+    notify(`Trascina ${f.name} in iCloud Drive per salvarla.`);
   };
 
   const topaz = async (app: string) => {

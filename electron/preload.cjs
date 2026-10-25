@@ -18,4 +18,5 @@ contextBridge.exposeInMainWorld("lomaDesktop", {
     return () => ipcRenderer.removeListener("loma:onFileOpened", h);
   },
   openPath: (p) => ipcRenderer.invoke("loma:openPath", p),
+  openExternal: (u) => ipcRenderer.invoke("loma:openExternal", u),
 });
