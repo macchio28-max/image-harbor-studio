@@ -3,7 +3,7 @@ import {
   Save, MousePointer2, Hand, ZoomIn, ZoomOut, Columns2, SlidersHorizontal, Camera, Eraser,
   MessageCircle, Circle, Sparkles, Clapperboard, Gem, Maximize2, HardDrive, Cloud, CloudSun, Mail,
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
-  FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, LayoutGrid, Square,
+  FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, LayoutGrid, Square,
 } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 import logo from "@/assets/loma-logo.png.asset.json";
@@ -430,6 +430,14 @@ export function LomaViewer() {
     }
   };
 
+  const closeAll = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    session.forEach((s) => s.thumb?.startsWith("blob:") && URL.revokeObjectURL(s.thumb));
+    if (img?.url?.startsWith("blob:")) URL.revokeObjectURL(img.url);
+    setImg(null); setSession([]); setCurId(null); setView("loupe"); setCompare(false); setOther(null); setActive("A");
+    setAdjust(defaultAdjust); setCrop(null); setSel(null); setScale(1); setOff({ x: 0, y: 0 }); setHist(null);
+    sonnerToast.success("Sessione chiusa");
+  };
   const copyToClipboard = async () => {
     if (!img || !imgEl.current) return false;
     const desk = (window as any).lomaDesktop;
@@ -829,9 +837,6 @@ export function LomaViewer() {
               onDoubleClick={(e) => e.stopPropagation()}
               className="no-drag absolute right-2 top-2 z-30 flex gap-1"
             >
-              {[
-                { t: "Copia negli appunti", i: <Copy className="h-4 w-4" />, f: async () => sonnerToast[(await copyToClipboard()) ? "success" : "error"]((await Promise.resolve(true)) && "") },
-              ].length && null}
               <button onClick={async () => { const ok = await copyToClipboard(); ok ? sonnerToast.success("Immagine copiata negli appunti") : sonnerToast.error("Copia non riuscita"); }}
                 title="Copia negli appunti" className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
                 <Copy className="h-4 w-4" />
