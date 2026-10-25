@@ -133,6 +133,85 @@ export function LomaViewer() {
     probe.src = url;
   };
 
+  // ---------- Culling session ----------
+  const [session, setSession] = useState<CullItem[]>([]);
+  const [curId, setCurId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<CullFilter>({ kind: "all", minStars: 0 });
+  const [stripOpen, setStripOpen] = useState(true);
+  const multiInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement | null>(null);
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+  const fitScale = useRef(1);
+  const visible = applyFilter(session, filter);
+
+  const selectItem = (id: string) => {
+    const it = session.find((s) => s.id === id);
+    if (!it) return;
+    setCurId(id);
+    openFile(it.file);
+  };
+  const step = (d: number) => {
+    if (!visible.length) return;
+    const i = visible.findIndex((v) => v.id === curId);
+    const n = visible[Math.min(visible.length - 1, Math.max(0, (i < 0 ? 0 : i) + d))];
+    if (n && n.id !== curId) selectItem(n.id);
+  };
+  const updateCur = (p: Partial<CullItem>) =>
+    curId && setSession((s) => s.map((x) => (x.id === curId ? { ...x, ...p } : x)));
+
+  const importFiles = async (list: FileList | null) => {
+    const files = Array.from(list ?? []).filter((f) => IMAGE_RE.test(f.name))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    if (!files.length) { notify("Nessuna foto trovata."); return; }
+    session.forEach((s) => s.thumb && URL.revokeObjectURL(s.thumb));
+    const base: CullItem[] = files.map((file, i) => ({ id: `${i}-${file.name}`, file, thumb: null, rating: 0, locked: false, flagged: false }));
+    setSession(base);
+    setStripOpen(true);
+    setCurId(base[0].id);
+    openFile(base[0].file);
+    notify(`Importate ${files.length} foto.`);
+    // read previews + in-camera tags in small parallel batches
+    for (let i = 0; i < base.length; i += 6) {
+      const chunk = base.slice(i, i + 6);
+      const res = await Promise.all(chunk.map((c) => readCull(c.file)));
+      setSession((s) => s.map((x) => { const k = chunk.findIndex((c) => c.id === x.id); return k < 0 ? x : { ...x, ...res[k] }; }));
+    }
+  };
+
+  const sendBatch = async () => {
+    const files = visible.map((v) => v.file);
+    if (!files.length) { notify("Nessuna foto filtrata da inviare."); return; }
+    const desk = (window as any).lomaDesktop;
+    if (desk?.launchApp) {
+      const app = localStorage.getItem("loma.topaz.Adobe Lightroom") || localStorage.getItem("loma.topaz.Adobe Lightroom Classic");
+      if (app) { desk.launchApp(app, files.map((f) => desk.getPathForFile?.(f) ?? (f as any).path)); notify(`${files.length} foto inviate a Lightroom.`); return; }
+    }
+    if (navigator.canShare?.({ files })) {
+      try { await navigator.share({ files, title: "Invia a Lightroom" }); return; } catch { /* cancelled */ return; }
+    }
+    files.forEach((f, i) => setTimeout(() => download(f, f.name), i * 250));
+    notify(`${files.length} foto scaricate: importale in Lightroom.`);
+  };
+
+  // keyboard culling
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyRef.current = (e) => {
+    const t = e.target as HTMLElement;
+    if (t?.closest?.("input,textarea,select,[contenteditable]")) return;
+    if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+    else if (e.key === " ") { if (!img) return; e.preventDefault(); scale > fitScale.current * 1.02 ? fit() : setZoom(1); }
+    else if (!curId || e.ctrlKey || e.metaKey) return;
+    else if (/^[0-5]$/.test(e.key)) updateCur({ rating: Number(e.key) });
+    else if (e.key.toLowerCase() === "l") updateCur({ locked: !session.find((s) => s.id === curId)?.locked });
+    else if (e.key.toLowerCase() === "f") updateCur({ flagged: !session.find((s) => s.id === curId)?.flagged });
+  };
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => keyRef.current(e);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
+
   // wheel zoom (non-passive)
   const wheelRef = useRef<(e: WheelEvent) => void>(() => {});
   wheelRef.current = (e) => {
@@ -388,6 +467,9 @@ export function LomaViewer() {
           </div>
         </div>
         <Group>
+          <Tool icon={<HardDrive className="text-primary" />} label="Importa Scheda" onClick={() => folderInput.current?.click()} />
+          <Tool icon={<Images />} label="Apri Multipli" onClick={() => multiInput.current?.click()} />
+          <Tool icon={<GalleryHorizontal />} label="Filmstrip" active={stripOpen && session.length > 0} onClick={() => setStripOpen((o) => !o)} />
           <Tool icon={<Save className="text-primary" />} label="Salva" onClick={save} />
           <Tool icon={<MousePointer2 />} label="Seleziona" active={mode === "select"} onClick={() => setMode("select")} />
           <Tool icon={<Hand />} label="Sposta" active={mode === "move"} onClick={() => setMode("move")} />
@@ -443,13 +525,21 @@ export function LomaViewer() {
           onPointerMove={onMove}
           onPointerUp={onUp}
           onPointerCancel={onUp}
+          onTouchStart={(e) => { const t = e.touches[0]; swipe.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null; }}
+          onTouchEnd={(e) => {
+            const s = swipe.current; swipe.current = null;
+            if (!s || session.length < 2 || scale > fitScale.current * 1.02) return;
+            const t = e.changedTouches[0], dx = t.clientX - s.x, dy = t.clientY - s.y;
+            if (Math.abs(dx) > 80 && Math.abs(dy) < 60) step(dx < 0 ? 1 : -1);
+          }}
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
           onDragLeave={() => setDrag(false)}
           onDrop={(e) => {
             e.preventDefault();
             setDrag(false);
-            const f = e.dataTransfer.files[0];
-            if (f) openFile(f);
+            const fs = e.dataTransfer.files;
+            if (fs.length > 1) importFiles(fs);
+            else if (fs[0]) openFile(fs[0]);
           }}
         >
           {!img ? (
@@ -465,6 +555,10 @@ export function LomaViewer() {
               >
                 <FolderOpen className="h-5 w-5" /> Apri immagine...
               </button>
+              <div className="mt-3 flex gap-2">
+                <button onClick={() => folderInput.current?.click()} className="rounded-lg bg-secondary px-4 py-2 text-sm hover:bg-accent">Importa Scheda / Cartella</button>
+                <button onClick={() => multiInput.current?.click()} className="rounded-lg bg-secondary px-4 py-2 text-sm hover:bg-accent">Apri Multipli</button>
+              </div>
             </div>
           ) : (
             <>
@@ -582,7 +676,19 @@ export function LomaViewer() {
         </aside>
       </div>
 
+      {session.length > 0 && stripOpen && (
+        <Filmstrip
+          items={visible} total={session.length} current={curId} filter={filter} setFilter={setFilter}
+          onSelect={selectItem} onSendBatch={sendBatch}
+        />
+      )}
+
       <input ref={fileInput} type="file" accept={ACCEPT} hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) openFile(f); e.target.value = ""; }} />
+      <input ref={multiInput} type="file" accept={ACCEPT} multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }} />
+      <input
+        ref={(el) => { folderInput.current = el; el?.setAttribute("webkitdirectory", ""); el?.setAttribute("directory", ""); }}
+        type="file" multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }}
+      />
       {topazOpen && <TopazSettings onClose={() => setTopazOpen(false)} />}
     </div>
   );

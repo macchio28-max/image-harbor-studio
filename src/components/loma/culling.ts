@@ -15,7 +15,7 @@ const truthy = (v: unknown) =>
 /** Reads in-camera rating, lock/protection and pick flag from parsed metadata. */
 export function cullFromMeta(m: Record<string, any>) {
   let rating = 0;
-  const r = Number(m.Rating ?? m["xmp:Rating"] ?? m.RatingPercent != null ? m.Rating ?? Math.round((m.RatingPercent ?? 0) / 20) : 0);
+  const r = Number(m.Rating ?? (m.RatingPercent != null ? Number(m.RatingPercent) / 20 : 0));
   if (Number.isFinite(r)) rating = Math.max(0, Math.min(5, Math.round(r)));
   let locked = false;
   let flagged = false;
