@@ -1,8 +1,5 @@
-export type Adjust = { brightness: number; contrast: number; saturation: number; rotation: number; flipH: boolean };
-export const defaultAdjust: Adjust = { brightness: 100, contrast: 100, saturation: 100, rotation: 0, flipH: false };
-
-export const filterOf = (a: Adjust) =>
-  `brightness(${a.brightness}%) contrast(${a.contrast}%) saturate(${a.saturation}%)`;
+import { type Adjust, defaultAdjust, developCanvas } from "./develop";
+export { type Adjust, defaultAdjust };
 
 /** Redraws pixels on a blank canvas: output carries no EXIF/IPTC/XMP/C2PA/AI chunks. */
 export async function renderClean(
@@ -12,18 +9,21 @@ export async function renderClean(
   type: "image/png" | "image/jpeg" | "image/webp" = "image/png",
 ): Promise<Blob> {
   const sx = crop?.x ?? 0, sy = crop?.y ?? 0;
-  const sw = crop?.w ?? img.naturalWidth, sh = crop?.h ?? img.naturalHeight;
-  const rot = ((adjust.rotation % 360) + 360) % 360;
-  const swap = rot === 90 || rot === 270;
+  const sw = Math.round(crop?.w ?? img.naturalWidth), sh = Math.round(crop?.h ?? img.naturalHeight);
+  const src = document.createElement("canvas");
+  src.width = sw; src.height = sh;
+  src.getContext("2d")!.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+  const dev = developCanvas(src, sw, sh, adjust, 1).canvas;
+  const ang = ((adjust.rotation + adjust.straighten) * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(ang)), sin = Math.abs(Math.sin(ang));
   const c = document.createElement("canvas");
-  c.width = swap ? sh : sw;
-  c.height = swap ? sw : sh;
+  c.width = Math.round(sw * cos + sh * sin);
+  c.height = Math.round(sw * sin + sh * cos);
   const ctx = c.getContext("2d")!;
-  ctx.filter = filterOf(adjust);
   ctx.translate(c.width / 2, c.height / 2);
-  ctx.rotate((rot * Math.PI) / 180);
+  ctx.rotate(ang);
   if (adjust.flipH) ctx.scale(-1, 1);
-  ctx.drawImage(img, sx, sy, sw, sh, -sw / 2, -sh / 2, sw, sh);
+  ctx.drawImage(dev, -sw / 2, -sh / 2);
   return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("export"))), type, 0.95));
 }
 

@@ -113,3 +113,37 @@
     overscroll-behavior: none;
   }
 }
+
+@layer components {
+  .sel {
+    @apply w-full rounded border border-border bg-background/60 px-2 py-1 text-xs;
+  }
+  .loma-range {
+    @apply w-full appearance-none bg-transparent;
+    height: 14px;
+  }
+  .loma-range::-webkit-slider-runnable-track {
+    height: 2px;
+    background: var(--track, var(--color-muted-foreground));
+    border-radius: 2px;
+  }
+  .loma-range::-moz-range-track {
+    height: 2px;
+    background: var(--track, var(--color-muted-foreground));
+  }
+  .loma-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 10px;
+    margin-top: -4px;
+    border-radius: 2px;
+    background: var(--color-foreground);
+  }
+  .loma-range::-moz-range-thumb {
+    width: 14px;
+    height: 10px;
+    border: 0;
+    border-radius: 2px;
+    background: var(--color-foreground);
+  }
+}
