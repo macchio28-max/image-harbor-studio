@@ -581,7 +581,7 @@ export function LomaViewer() {
             <div className="text-[9px] font-bold tracking-[0.2em] text-primary">VIEWER</div>
           </div>
         </div>
-        <div className="no-drag flex min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto px-1 py-1">
+        <div className="no-drag flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 py-1"><div className="flex w-full items-stretch gap-0.5">
         <Group>
           <Tool icon={<HardDrive className="text-primary" />} label="Importa" onClick={() => folderInput.current?.click()} />
           <Tool icon={<Images />} label="Multipli" onClick={() => multiInput.current?.click()} />
@@ -634,7 +634,7 @@ export function LomaViewer() {
           <Tool icon={<B.AirDropIcon />} label="AirDrop" onClick={() => share("AirDrop")} />
           <Tool icon={<B.LocalSendIcon />} label="LocalSend" onClick={() => share("LocalSend")} />
         </Group>
-        </div>
+        </div></div>
       </header>
 
       <div className="flex min-h-0 flex-1 gap-3 p-3">
@@ -840,7 +840,7 @@ export function LomaViewer() {
 }
 
 function Group({ children, last }: { children: ReactNode; last?: boolean }) {
-  return <div className={`flex shrink-0 items-stretch gap-0.5 pr-1 ${last ? "" : "mr-0.5 border-r border-border"}`}>{children}</div>;
+  return <div className={`flex flex-[1_1_auto] items-stretch justify-between gap-px pr-1 ${last ? "" : "mr-0.5 border-r border-border"}`}>{children}</div>;
 }
 
 function Tool({ icon, label, onClick, active }: { icon: ReactNode; label: string; onClick: () => void; active?: boolean }) {
@@ -848,9 +848,9 @@ function Tool({ icon, label, onClick, active }: { icon: ReactNode; label: string
     <button
       onClick={onClick}
       title={label}
-      className={`no-drag flex w-[46px] shrink-0 flex-col items-center justify-start gap-0.5 rounded px-0.5 py-0.5 text-[9px] leading-tight hover:bg-accent ${active ? "bg-accent text-primary" : ""}`}
+      className={`no-drag flex min-w-[34px] max-w-[64px] flex-1 flex-col items-center justify-start gap-0.5 rounded px-0.5 py-0.5 text-[clamp(8px,0.62vw,10.5px)] leading-tight hover:bg-accent ${active ? "bg-accent text-primary" : ""}`}
     >
-      <span className="flex h-6 items-center justify-center text-sm [&_svg]:h-5 [&_svg]:w-5">{icon}</span>
+      <span className="flex h-6 items-center justify-center text-sm [&_svg]:h-[clamp(16px,1.25vw,22px)] [&_svg]:w-[clamp(16px,1.25vw,22px)]">{icon}</span>
       <span className="w-full truncate text-center">{label}</span>
     </button>
   );
