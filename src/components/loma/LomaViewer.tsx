@@ -3,7 +3,7 @@ import {
   Save, MousePointer2, Hand, ZoomIn, ZoomOut, Columns2, SlidersHorizontal, Camera, Eraser,
   MessageCircle, Circle, Sparkles, Clapperboard, Gem, Maximize2, HardDrive, Cloud, CloudSun, Mail,
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
-  FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2,
+  FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2,
 } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 import logo from "@/assets/loma-logo.png.asset.json";
@@ -111,6 +111,17 @@ export function LomaViewer() {
     setScale(n);
     setOff({ x: px - (px - o.x) * k, y: py - (py - o.y) * k });
   }, []);
+
+  const [isFull, setIsFull] = useState(false);
+  useEffect(() => {
+    const h = () => { setIsFull(!!document.fullscreenElement); setTimeout(() => fit(), 120); };
+    document.addEventListener("fullscreenchange", h);
+    return () => document.removeEventListener("fullscreenchange", h);
+  }, [fit]);
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else stage.current?.requestFullscreen?.().catch(() => document.documentElement.requestFullscreen?.());
+  };
 
   const openFile = async (file: File) => {
     let url = URL.createObjectURL(file);
@@ -599,6 +610,14 @@ export function LomaViewer() {
           onPointerMove={onMove}
           onPointerUp={onUp}
           onPointerCancel={onUp}
+          onDoubleClick={(e) => {
+            if (!img || compare) return;
+            if ((e.target as HTMLElement).closest("button")) return;
+            setSel(null);
+            if (scale >= 0.999) { fit(); return; }
+            const r = stage.current!.getBoundingClientRect();
+            setZoom(1, e.clientX - r.left, e.clientY - r.top);
+          }}
           onTouchStart={(e) => { const t = e.touches[0]!; swipe.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null; }}
           onTouchEnd={(e) => {
             const s = swipe.current; swipe.current = null;
@@ -616,6 +635,17 @@ export function LomaViewer() {
             else if (fs[0]) openFile(fs[0]);
           }}
         >
+          {img && (
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onClick={toggleFullscreen}
+              title={isFull ? "Esci da schermo intero" : "Schermo intero"}
+              className="no-drag absolute right-2 top-2 z-30 rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100"
+            >
+              {isFull ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </button>
+          )}
           {!img ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
               <Images className="h-40 w-40 text-muted-foreground/60" strokeWidth={1.2} />
