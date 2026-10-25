@@ -757,7 +757,9 @@ function TopazSettings({ onClose }: { onClose: () => void }) {
   const apps = ["Topaz Photo AI", "Topaz Gigapixel AI", "Adobe Photoshop", "Adobe Lightroom", "Adobe Lightroom Classic"];
   const [vals, setVals] = useState(() => Object.fromEntries(apps.map((a) => [a, localStorage.getItem(`loma.topaz.${a}`) ?? ""])));
   const [mobile] = useState(isTouchDevice);
-  const browse = (a: string) => {
+  const browse = async (a: string) => {
+    const desk = (window as any).lomaDesktop;
+    if (desk?.pickApp) { const p = await desk.pickApp(a); if (p) setVals((v) => ({ ...v, [a]: p })); return; }
     const inp = document.createElement("input");
     inp.type = "file";
     inp.accept = ".exe,.app,.lnk,application/x-msdownload";

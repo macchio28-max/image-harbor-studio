@@ -1,13 +1,9 @@
-# LoMa VIEWER – Desktop (Electron)
+# LoMa VIEWER – Desktop (Electron + electron-builder)
 
-```bash
-npm install --save-dev electron @electron/packager
-# Windows
-npx @electron/packager . "LoMa VIEWER" --platform=win32 --arch=x64 --out=electron-release --overwrite --ignore='^/src' --ignore='^/node_modules'
-# macOS
-npx @electron/packager . "LoMa VIEWER" --platform=darwin --arch=arm64 --out=electron-release --overwrite --ignore='^/src' --ignore='^/node_modules'
-```
+- `npm run electron:dev` – opens the desktop window on http://localhost:8080 (run `npm run dev` first).
+- `npm run electron:build:win` – Windows installer (.exe, NSIS) in `electron-release/`.
+- `npm run electron:build:mac` – macOS `.dmg` + `.zip` (must run on a Mac).
+- GitHub Actions: `.github/workflows/build-desktop.yml` builds both on every push to main, manually, and attaches installers to a Release when you push a tag `v*`.
 
-Entry: `electron/main.cjs` (set `"main": "electron/main.cjs"` in package.json before packaging).
-For signed `.exe` installers / `.dmg` images, run `electron-builder` on a Windows/Mac machine.
-Set `LOMA_URL` to the published URL of the app.
+The packaged app loads the published URL (offline via service worker); override with `LOMA_URL`.
+Program paths chosen with "Sfoglia..." are saved in `userData/apps.json`.
