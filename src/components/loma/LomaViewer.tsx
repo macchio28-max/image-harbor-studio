@@ -510,49 +510,66 @@ export function LomaViewer() {
     transformOrigin: "center", width: "100%", height: "100%",
   };
 
+  const isMacDesk = typeof window !== "undefined" && !!(window as any).lomaDesktop && /Mac/.test(navigator.platform);
   return (
     <div className="flex h-dvh flex-col bg-toolbar text-foreground select-none">
+      {/* Title bar: always draggable */}
+      <div className="drag-region flex h-7 shrink-0 items-center justify-center border-b border-border bg-toolbar px-20 text-[11px] font-medium text-muted-foreground">
+        <span className="truncate">{img ? img.file.name : "LoMa VIEWER"}</span>
+      </div>
       {/* Toolbar */}
-      <header className={`drag-region flex items-stretch gap-1 overflow-x-auto border-b border-border bg-toolbar px-3 py-2 ${(typeof window !== "undefined" && (window as any).lomaDesktop && /Mac/.test(navigator.platform)) ? "pl-20" : ""}`}>
-        <div className="mr-2 flex shrink-0 items-center gap-2">
-          <img src={logo.url} alt="LoMa VIEWER" className="h-12 w-12 rounded-full" />
+      <header className="flex shrink-0 items-stretch border-b border-border bg-toolbar">
+        <div className={`drag-region flex shrink-0 items-center gap-1.5 px-2 ${isMacDesk ? "pl-[4.5rem]" : ""}`}>
+          <img src={logo.url} alt="LoMa VIEWER" className="h-8 w-8 rounded-full" />
           <div className="leading-none">
-            <div className="text-xl font-bold tracking-tight">LoMa</div>
-            <div className="text-sm font-bold tracking-[0.2em] text-primary">VIEWER</div>
+            <div className="text-sm font-bold tracking-tight">LoMa</div>
+            <div className="text-[9px] font-bold tracking-[0.2em] text-primary">VIEWER</div>
           </div>
         </div>
+        <div className="no-drag flex min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto px-1 py-1">
         <Group>
-          <Tool icon={<HardDrive className="text-primary" />} label="Importa Scheda" onClick={() => folderInput.current?.click()} />
-          <Tool icon={<Images />} label="Apri Multipli" onClick={() => multiInput.current?.click()} />
+          <Tool icon={<HardDrive className="text-primary" />} label="Importa" onClick={() => folderInput.current?.click()} />
+          <Tool icon={<Images />} label="Multipli" onClick={() => multiInput.current?.click()} />
           <Tool icon={<GalleryHorizontal />} label="Filmstrip" active={stripOpen && session.length > 0} onClick={() => setStripOpen((o) => !o)} />
           <Tool icon={<Save className="text-primary" />} label="Salva" onClick={save} />
           <Tool icon={<MousePointer2 />} label="Seleziona" active={mode === "select"} onClick={() => setMode("select")} />
           <Tool icon={<Hand />} label="Sposta" active={mode === "move"} onClick={() => setMode("move")} />
-          <Tool icon={<ZoomOut />} label="Zoom -" onClick={() => setZoom(scale / 1.25)} />
-          <Tool icon={<ZoomIn />} label="Zoom +" onClick={() => setZoom(scale * 1.25)} />
-          <Tool icon={<b>1:1</b>} label="1:1" onClick={() => setZoom(1)} />
-          <Tool icon={<b>1:2</b>} label="1:2" onClick={() => setZoom(0.5)} />
-          <Tool icon={<b>1:3</b>} label="1:3" onClick={() => setZoom(1 / 3)} />
-          <Tool icon={<b>Fit</b>} label="Fit" onClick={() => fit()} />
+        </Group>
+        <Group>
+          <div className="no-drag flex shrink-0 flex-col items-center justify-center gap-0.5 px-1">
+            <div className="flex items-center gap-0.5">
+              <ZBtn onClick={() => setZoom(scale / 1.25)}><ZoomOut className="h-3.5 w-3.5" /></ZBtn>
+              <span className="w-10 text-center text-[10px] tabular-nums">{Math.round(scale * 100)}%</span>
+              <ZBtn onClick={() => setZoom(scale * 1.25)}><ZoomIn className="h-3.5 w-3.5" /></ZBtn>
+            </div>
+            <div className="flex items-center gap-0.5">
+              <ZBtn onClick={() => setZoom(1)}>1:1</ZBtn>
+              <ZBtn onClick={() => setZoom(0.5)}>1:2</ZBtn>
+              <ZBtn onClick={() => setZoom(1 / 3)}>1:3</ZBtn>
+              <ZBtn onClick={() => fit()}>Fit</ZBtn>
+            </div>
+          </div>
           <Tool icon={<Columns2 />} label="Confronta" active={compare} onClick={() => setCompare((c) => !c)} />
           <Tool icon={<SlidersHorizontal className="text-primary" />} label="Strumenti" active={toolsOpen} onClick={() => setToolsOpen((o) => !o)} />
           <Tool icon={<Camera />} label="Screenshot" onClick={screenshot} />
-          <Tool icon={<Eraser className="text-chart-3" />} label="Senza metadati" onClick={deepClean} />
+          <Tool icon={<Eraser className="text-chart-3" />} label="No meta" onClick={deepClean} />
         </Group>
         <Group>
           <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/")} />
           <Tool icon={<B.MetaAIIcon />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/")} />
           <Tool icon={<B.GeminiIcon />} label="Gemini" onClick={() => openAI("Gemini", "https://gemini.google.com/")} />
           <Tool icon={<B.FlowIcon />} label="Flow" onClick={() => openAI("Flow", "https://labs.google/fx/tools/flow")} />
-          <span className="mx-1 w-px shrink-0 self-stretch bg-border" />
-          <Tool icon={<B.TopazPhotoIcon />} label="Topaz Photo AI" onClick={() => topaz("Topaz Photo AI")} />
-          <Tool icon={<B.TopazGigapixelIcon />} label="Topaz Gigapixel AI" onClick={() => topaz("Topaz Gigapixel AI")} />
+        </Group>
+        <Group>
+          <Tool icon={<B.TopazPhotoIcon />} label="Photo AI" onClick={() => topaz("Topaz Photo AI")} />
+          <Tool icon={<B.TopazGigapixelIcon />} label="Gigapixel" onClick={() => topaz("Topaz Gigapixel AI")} />
           <Tool icon={<B.PhotoshopIcon />} label="Photoshop" onClick={() => topaz("Adobe Photoshop")} />
           <Tool icon={<B.LightroomIcon />} label="Lightroom" onClick={() => topaz("Adobe Lightroom")} />
-          <Tool icon={<B.LightroomClassicIcon />} label="Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
+          <Tool icon={<B.LightroomClassicIcon />} label="Lr Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
           <Tool icon={<Settings />} label="Percorsi" onClick={() => setTopazOpen(true)} />
-          <Tool icon={<Trash2 />} label="Svuota Cache e Memoria" onClick={clearCache} />
-          <span className="mx-1 w-px shrink-0 self-stretch bg-border" />
+          <Tool icon={<Trash2 />} label="Cache" onClick={clearCache} />
+        </Group>
+        <Group last>
           <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
           <Tool icon={<B.OneDriveIcon />} label="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
           <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => uploadCloud("iCloud Drive", "https://www.icloud.com/iclouddrive/")} />
@@ -561,6 +578,7 @@ export function LomaViewer() {
           <Tool icon={<B.AirDropIcon />} label="AirDrop" onClick={() => share("AirDrop")} />
           <Tool icon={<B.LocalSendIcon />} label="LocalSend" onClick={() => share("LocalSend")} />
         </Group>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1 gap-3 p-3">
@@ -751,7 +769,7 @@ export function LomaViewer() {
 }
 
 function Group({ children, last }: { children: ReactNode; last?: boolean }) {
-  return <div className={`flex shrink-0 items-stretch gap-0.5 pr-2 ${last ? "" : "mr-1 border-r border-border"}`}>{children}</div>;
+  return <div className={`flex shrink-0 items-stretch gap-0.5 pr-1 ${last ? "" : "mr-0.5 border-r border-border"}`}>{children}</div>;
 }
 
 function Tool({ icon, label, onClick, active }: { icon: ReactNode; label: string; onClick: () => void; active?: boolean }) {
@@ -759,12 +777,16 @@ function Tool({ icon, label, onClick, active }: { icon: ReactNode; label: string
     <button
       onClick={onClick}
       title={label}
-      className={`no-drag flex w-[60px] shrink-0 flex-col items-center justify-start gap-1 rounded-md px-1 py-1 text-[10px] leading-tight hover:bg-accent ${active ? "bg-accent text-primary" : ""}`}
+      className={`no-drag flex w-[46px] shrink-0 flex-col items-center justify-start gap-0.5 rounded px-0.5 py-0.5 text-[9px] leading-tight hover:bg-accent ${active ? "bg-accent text-primary" : ""}`}
     >
-      <span className="flex h-8 items-center justify-center text-lg [&_svg]:h-7 [&_svg]:w-7">{icon}</span>
-      <span className="text-center">{label}</span>
+      <span className="flex h-6 items-center justify-center text-sm [&_svg]:h-5 [&_svg]:w-5">{icon}</span>
+      <span className="w-full truncate text-center">{label}</span>
     </button>
   );
+}
+
+function ZBtn({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+  return <button onClick={onClick} className="no-drag rounded px-1 py-0.5 text-[10px] font-semibold leading-none hover:bg-accent">{children}</button>;
 }
 
 function Mini({ children, onClick }: { children: ReactNode; onClick: () => void }) {
