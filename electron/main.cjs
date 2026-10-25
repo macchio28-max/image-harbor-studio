@@ -1,7 +1,7 @@
 // LoMa VIEWER desktop shell (Electron).
 // Loads the app from LOMA_URL (e.g. http://localhost:8080 during development) or the published
 // URL (cached offline by its service worker) and exposes native IPC for dialogs and external programs.
-const { app, BrowserWindow, ipcMain, dialog, shell, session } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, session, clipboard, nativeImage } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const os = require("os");
@@ -159,3 +159,10 @@ ipcMain.handle("loma:saveToFolder", (_e, dir, name, src) => {
   } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
 });
 ipcMain.handle("loma:showInFolder", (_e, p) => shell.showItemInFolder(p));
+
+ipcMain.handle("loma:copyImage", (_e, bytes) => {
+  const im = nativeImage.createFromBuffer(Buffer.from(bytes));
+  if (im.isEmpty()) return false;
+  clipboard.writeImage(im);
+  return true;
+});

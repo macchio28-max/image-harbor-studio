@@ -429,15 +429,21 @@ export function LomaViewer() {
 
   const copyToClipboard = async () => {
     if (!img || !imgEl.current) return false;
+    const desk = (window as any).lomaDesktop;
     try {
-      const b = await renderClean(imgEl.current, adjust, crop, "image/png");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": b })]);
+      if (desk?.copyImage) {
+        const b = await renderClean(imgEl.current, adjust, crop, "image/png");
+        return !!(await desk.copyImage(b));
+      }
+      // Pass the promise directly so the click's user activation is still valid when the clipboard is written.
+      const pending = renderClean(imgEl.current, adjust, crop, "image/png");
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": pending })]);
       return true;
     } catch { return false; }
   };
   const openAI = async (name: string, url: string) => {
     const mobile = isTouchDevice();
-    if (img && imgEl.current && (mobile || typeof navigator.canShare === "function")) {
+    if (img && imgEl.current && mobile) {
       const b = await renderClean(imgEl.current, adjust, crop, "image/jpeg");
       const f = new File([b], `${baseName(img.file.name)}.jpg`, { type: "image/jpeg" });
       if (navigator.canShare?.({ files: [f] })) {
@@ -451,10 +457,15 @@ export function LomaViewer() {
       if (mobile) { notify("Questo dispositivo non supporta la condivisione di file."); return; }
     }
     if (!img && isTouchDevice()) { notify(`Apri prima un'immagine da inviare a ${name}.`); return; }
-    // Desktop without native file sharing: web link + clipboard
+    // Desktop: AI websites cannot receive a file from a link, so copy the photo to the clipboard and open the chat.
+    if (!img) { notify(`Apri prima un'immagine da inviare a ${name}.`); return; }
+    const id = sonnerToast.loading(`Copia dell'immagine per ${name}...`);
     const ok = await copyToClipboard();
-    window.open(url, "_blank", "noopener");
-    notify(ok ? `Immagine copiata: incollala in ${name}.` : `${name} aperto.`);
+    const desk = (window as any).lomaDesktop;
+    if (desk?.openExternal) desk.openExternal(url); else window.open(url, "_blank", "noopener");
+    const paste = /Mac/.test(navigator.platform) ? "⌘V" : "Ctrl+V";
+    if (ok) sonnerToast.success(`Immagine copiata. In ${name} clicca nella chat e premi ${paste}.`, { id, duration: 8000 });
+    else sonnerToast.error(`Copia non riuscita: ${name} aperto, trascina la foto nella chat.`, { id });
   };
 
   const share = async (target: string, fallback?: string) => {
