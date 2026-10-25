@@ -2,7 +2,7 @@
 export async function registerServiceWorker() {
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
   const host = window.location.hostname.toLowerCase();
-  const first = host.split(".")[0];
+  const first = host.split(".")[0] ?? "";
   const lovableHost = /\.(lovable\.app|gpt-eng\.com|gptengineer\.run)$/.test(host);
   const refused =
     !import.meta.env.PROD ||
