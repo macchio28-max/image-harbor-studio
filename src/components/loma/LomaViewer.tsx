@@ -585,7 +585,7 @@ function TopazSettings({ onClose }: { onClose: () => void }) {
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm">Annulla</button>
           <button
-            onClick={() => { apps.forEach((a) => localStorage.setItem(`loma.topaz.${a}`, vals[a])); onClose(); }}
+            onClick={() => { apps.forEach((a) => localStorage.setItem(`loma.topaz.${a}`, vals[a] ?? "")); onClose(); }}
             className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
           >
             Salva
