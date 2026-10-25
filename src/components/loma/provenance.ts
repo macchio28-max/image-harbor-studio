@@ -72,7 +72,8 @@ export function pngTextChunks(b: Uint8Array): { chunks: TextChunk[]; c2pa: boole
   return { chunks, c2pa };
 }
 
-export function analyze(bytes: Uint8Array, meta: Record<string, any>): Provenance {
+export function analyze(bytes: Uint8Array, metaIn: Record<string, any>): Provenance {
+  const meta: any = metaIn;
   const findings: Finding[] = [];
   let level: Level = "none";
   const bump = (l: Level) => { if (l === "ai" || (l === "partial" && level === "none")) level = l; };
