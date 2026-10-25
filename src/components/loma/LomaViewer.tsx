@@ -3,7 +3,7 @@ import {
   Save, MousePointer2, Hand, ZoomIn, ZoomOut, Columns2, SlidersHorizontal, Camera, Eraser,
   MessageCircle, Circle, Sparkles, Clapperboard, Gem, Maximize2, HardDrive, Cloud, CloudSun, Mail,
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
-  FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2,
+  FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, LayoutGrid, Square,
 } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 import logo from "@/assets/loma-logo.png.asset.json";
@@ -15,6 +15,7 @@ import {
 import * as B from "./brand-icons";
 import { DevelopPanel } from "./DevelopPanel";
 import { Filmstrip } from "./Filmstrip";
+import { ContactSheet } from "./ContactSheet";
 import { type CullItem, type CullFilter, IMAGE_RE, readCull, applyFilter } from "./culling";
 import { developCanvas, autoMeasure } from "./develop";
 
@@ -153,6 +154,9 @@ export function LomaViewer() {
   const [curId, setCurId] = useState<string | null>(null);
   const [filter, setFilter] = useState<CullFilter>({ kind: "all", minStars: 0 });
   const [stripOpen, setStripOpen] = useState(true);
+  const [view, setView] = useState<"loupe" | "grid">("loupe");
+  const [gridSize, setGridSize] = useState(180);
+  const openLoupe = (id?: string | null) => { setView("loupe"); const it = session.find((s) => s.id === (id ?? curId)); if (it) { setCurId(it.id); openFile(it.file); } };
   const multiInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement | null>(null);
   const swipe = useRef<{ x: number; y: number } | null>(null);
@@ -244,6 +248,8 @@ export function LomaViewer() {
   keyRef.current = (e) => {
     const t = e.target as HTMLElement;
     if (t?.closest?.("input,textarea,select,[contenteditable]")) return;
+    if (e.key.toLowerCase() === "g" && !e.ctrlKey && !e.metaKey && session.length) { e.preventDefault(); setView("grid"); return; }
+    if ((e.key.toLowerCase() === "e" || e.key === "Enter") && view === "grid" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); openLoupe(); return; }
     if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
     else if (e.key === " ") { if (!img) return; e.preventDefault(); scale > fitScale.current * 1.02 ? fit() : setZoom(1); }
@@ -269,7 +275,7 @@ export function LomaViewer() {
   useEffect(() => {
     const el = stage.current;
     if (!el) return;
-    const h = (e: WheelEvent) => { e.preventDefault(); wheelRef.current(e); };
+    const h = (e: WheelEvent) => { if ((e.target as HTMLElement)?.closest?.("[data-grid]")) return; e.preventDefault(); wheelRef.current(e); };
     el.addEventListener("wheel", h, { passive: false });
     return () => el.removeEventListener("wheel", h);
   }, []);
@@ -542,6 +548,7 @@ export function LomaViewer() {
           <Tool icon={<HardDrive className="text-primary" />} label="Importa" onClick={() => folderInput.current?.click()} />
           <Tool icon={<Images />} label="Multipli" onClick={() => multiInput.current?.click()} />
           <Tool icon={<GalleryHorizontal />} label="Filmstrip" active={stripOpen && session.length > 0} onClick={() => setStripOpen((o) => !o)} />
+          <Tool icon={view === "grid" ? <Square /> : <LayoutGrid />} label={view === "grid" ? "Singola" : "Griglia"} active={view === "grid"} onClick={() => session.length ? (view === "grid" ? openLoupe() : setView("grid")) : notify("Importa prima più foto.")} />
           <Tool icon={<Save className="text-primary" />} label="Salva" onClick={save} />
           <Tool icon={<MousePointer2 />} label="Seleziona" active={mode === "select"} onClick={() => setMode("select")} />
           <Tool icon={<Hand />} label="Sposta" active={mode === "move"} onClick={() => setMode("move")} />
@@ -711,6 +718,9 @@ export function LomaViewer() {
           )}
           {toast && (
             <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md bg-popover px-4 py-2 text-sm shadow-xl">{toast}</div>
+          )}
+          {view === "grid" && session.length > 0 && (
+            <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} />
           )}
         </main>
 
