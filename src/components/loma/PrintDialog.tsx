@@ -12,7 +12,7 @@ type PaperKey = keyof typeof PAPERS;
 type Orient = "auto" | "portrait" | "landscape";
 type Mode = "fit" | "fill" | "border" | "id";
 
-export interface PrintOpts { paper: PaperKey; orient: Orient; mode: Mode; idCount: 4 | 6 | 8; marks: boolean }
+export interface PrintOpts { paper: PaperKey; orient: Orient; mode: Mode; idCount: 4 | 6 | 8; marks: boolean; panX?: number; panY?: number }
 
 /** Sheet size in mm after orientation. */
 export function sheetSize(o: PrintOpts, imgW: number, imgH: number) {
@@ -36,7 +36,8 @@ export function drawSheet(img: HTMLImageElement, o: PrintOpts, pxPerMm: number):
     const dw = iw * k, dh = ih * k;
     ctx.save();
     ctx.beginPath(); ctx.rect(x * pxPerMm, y * pxPerMm, w * pxPerMm, h * pxPerMm); ctx.clip();
-    ctx.drawImage(img, (x + (w - dw) / 2) * pxPerMm, (y + (h - dh) / 2) * pxPerMm, dw * pxPerMm, dh * pxPerMm);
+    const px = cover ? (o.panX ?? 0) : 0, py = cover ? (o.panY ?? 0) : 0;
+    ctx.drawImage(img, (x + ((w - dw) / 2) * (1 + px)) * pxPerMm, (y + ((h - dh) / 2) * (1 + py)) * pxPerMm, dw * pxPerMm, dh * pxPerMm);
     ctx.restore();
   };
   if (o.mode === "fit") place(0, 0, s.w, s.h, false);
@@ -71,7 +72,10 @@ export function drawSheet(img: HTMLImageElement, o: PrintOpts, pxPerMm: number):
 }
 
 export function PrintDialog({ src, onClose }: { src: string; onClose: () => void }) {
-  const [o, setO] = useState<PrintOpts>({ paper: "10x15", orient: "auto", mode: "fit", idCount: 6, marks: true });
+  const [o, setO] = useState<PrintOpts>({ paper: "10x15", orient: "auto", mode: "fit", idCount: 6, marks: true, panX: 0, panY: 0 });
+  const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const cropping = o.mode === "fill" || o.mode === "id";
+  const clamp = (v: number) => Math.max(-1, Math.min(1, v));
   const [im, setIm] = useState<HTMLImageElement | null>(null);
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -123,7 +127,12 @@ export function PrintDialog({ src, onClose }: { src: string; onClose: () => void
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
         <div className="flex min-h-0 flex-1 gap-4 overflow-auto p-4">
-          <div ref={box} className="flex h-[440px] flex-1 items-center justify-center rounded bg-canvas" />
+          <div ref={box}
+            onPointerDown={(e) => { if (!cropping) return; (e.target as Element).setPointerCapture?.(e.pointerId); dragRef.current = { x: e.clientX, y: e.clientY, px: o.panX ?? 0, py: o.panY ?? 0 }; }}
+            onPointerMove={(e) => { const d = dragRef.current; if (!d) return; setO((p) => ({ ...p, panX: clamp(d.px - (e.clientX - d.x) / 120), panY: clamp(d.py - (e.clientY - d.y) / 120) })); }}
+            onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }}
+            style={{ touchAction: "none" }}
+            className={`flex h-[440px] flex-1 select-none items-center justify-center rounded bg-canvas ${cropping ? "cursor-move" : ""}`} />
           <div className="w-64 space-y-4 text-xs">
             <div>
               <div className="mb-1 text-muted-foreground">Formato carta</div>
@@ -159,6 +168,16 @@ export function PrintDialog({ src, onClose }: { src: string; onClose: () => void
               </label>
               {o.mode === "id" && o.idCount === 8 && (o.paper === "10x15") && <p className="mt-1 text-muted-foreground">8 tessere stanno meglio su 13×18 o più grande.</p>}
             </div>
+            {cropping && (
+              <div className="space-y-2">
+                <div className="text-muted-foreground">Inquadratura (trascina sull'anteprima)</div>
+                <label className="block">Posizione orizzontale
+                  <input type="range" className="loma-range" min={-1} max={1} step={0.01} value={o.panX ?? 0} onChange={(e) => set("panX", +e.target.value)} /></label>
+                <label className="block">Posizione verticale (viso/occhi)
+                  <input type="range" className="loma-range" min={-1} max={1} step={0.01} value={o.panY ?? 0} onChange={(e) => set("panY", +e.target.value)} /></label>
+                <button onClick={() => setO((p) => ({ ...p, panX: 0, panY: 0 }))} className="rounded border border-border px-2 py-1 hover:text-foreground">Ricentra</button>
+              </div>
+            )}
             <p className="text-muted-foreground">Nella finestra di stampa imposta margini "Nessuno" e scala 100% per misure esatte.</p>
           </div>
         </div>
