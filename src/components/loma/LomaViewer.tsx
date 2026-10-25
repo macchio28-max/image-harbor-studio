@@ -59,6 +59,10 @@ export function LomaViewer() {
   const state = useRef({ scale, off });
   state.current = { scale, off };
 
+  // Quick feedback toasts (copy, close, cache) are a fast visual confirmation only:
+  // they disappear after exactly 1 second so they never cover the photo.
+  const QUICK_MS = 1000;
+
   const notify = (m: string) => {
     setToast(m);
     setTimeout(() => setToast(null), 3200);
@@ -260,7 +264,7 @@ export function LomaViewer() {
         if (r?.freed) extra = ` (${formatBytes(r.freed)} liberati)`;
       } catch { /* ignore */ }
     }
-    sonnerToast.success("Cache e memoria temporanea svuotate con successo!" + extra);
+    sonnerToast.success("Cache e memoria temporanea svuotate con successo!" + extra, { duration: QUICK_MS });
   };
 
   const sendBatch = async () => {
@@ -438,7 +442,7 @@ export function LomaViewer() {
     if (img?.url?.startsWith("blob:")) URL.revokeObjectURL(img.url);
     setImg(null); setSession([]); setCurId(null); setView("loupe"); setCompare(false); setOther(null); setActive("A");
     setAdjust(defaultAdjust); setCrop(null); setSel(null); setScale(1); setOff({ x: 0, y: 0 }); setHist(null);
-    sonnerToast.success("Sessione chiusa");
+    sonnerToast.success("Sessione chiusa", { duration: QUICK_MS });
   };
   const copyToClipboard = async () => {
     if (!img || !imgEl.current) return false;
@@ -840,7 +844,7 @@ export function LomaViewer() {
               onDoubleClick={(e) => e.stopPropagation()}
               className="no-drag absolute right-2 top-2 z-30 flex gap-1"
             >
-              <button onClick={async () => { const ok = await copyToClipboard(); ok ? sonnerToast.success("Immagine copiata negli appunti") : sonnerToast.error("Copia non riuscita"); }}
+              <button onClick={async () => { const ok = await copyToClipboard(); ok ? sonnerToast.success("Immagine copiata negli appunti", { duration: QUICK_MS }) : sonnerToast.error("Copia non riuscita"); }}
                 title="Copia negli appunti" className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
                 <Copy className="h-4 w-4" />
               </button>
