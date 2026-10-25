@@ -512,32 +512,46 @@ export function LomaViewer() {
 
   return (
     <div className="flex h-dvh flex-col bg-toolbar text-foreground select-none">
+      {/* Title bar: always draggable */}
+      <div className="drag-region flex h-7 shrink-0 items-center justify-center border-b border-border bg-toolbar px-20 text-[11px] font-medium text-muted-foreground">
+        <span className="truncate">{img ? img.file.name : "LoMa VIEWER"}</span>
+      </div>
       {/* Toolbar */}
-      <header className={`drag-region flex items-stretch gap-1 overflow-x-auto border-b border-border bg-toolbar px-3 py-2 ${(typeof window !== "undefined" && (window as any).lomaDesktop && /Mac/.test(navigator.platform)) ? "pl-20" : ""}`}>
-        <div className="mr-2 flex shrink-0 items-center gap-2">
-          <img src={logo.url} alt="LoMa VIEWER" className="h-12 w-12 rounded-full" />
+      <header className="flex shrink-0 items-stretch border-b border-border bg-toolbar">
+        <div className={`drag-region flex shrink-0 items-center gap-1.5 px-2 ${isMacDesk ? "pl-[4.5rem]" : ""}`}>
+          <img src={logo.url} alt="LoMa VIEWER" className="h-8 w-8 rounded-full" />
           <div className="leading-none">
-            <div className="text-xl font-bold tracking-tight">LoMa</div>
-            <div className="text-sm font-bold tracking-[0.2em] text-primary">VIEWER</div>
+            <div className="text-sm font-bold tracking-tight">LoMa</div>
+            <div className="text-[9px] font-bold tracking-[0.2em] text-primary">VIEWER</div>
           </div>
         </div>
+        <div className="no-drag flex min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto px-1 py-1">
         <Group>
-          <Tool icon={<HardDrive className="text-primary" />} label="Importa Scheda" onClick={() => folderInput.current?.click()} />
-          <Tool icon={<Images />} label="Apri Multipli" onClick={() => multiInput.current?.click()} />
+          <Tool icon={<HardDrive className="text-primary" />} label="Importa" onClick={() => folderInput.current?.click()} />
+          <Tool icon={<Images />} label="Multipli" onClick={() => multiInput.current?.click()} />
           <Tool icon={<GalleryHorizontal />} label="Filmstrip" active={stripOpen && session.length > 0} onClick={() => setStripOpen((o) => !o)} />
           <Tool icon={<Save className="text-primary" />} label="Salva" onClick={save} />
           <Tool icon={<MousePointer2 />} label="Seleziona" active={mode === "select"} onClick={() => setMode("select")} />
           <Tool icon={<Hand />} label="Sposta" active={mode === "move"} onClick={() => setMode("move")} />
-          <Tool icon={<ZoomOut />} label="Zoom -" onClick={() => setZoom(scale / 1.25)} />
-          <Tool icon={<ZoomIn />} label="Zoom +" onClick={() => setZoom(scale * 1.25)} />
-          <Tool icon={<b>1:1</b>} label="1:1" onClick={() => setZoom(1)} />
-          <Tool icon={<b>1:2</b>} label="1:2" onClick={() => setZoom(0.5)} />
-          <Tool icon={<b>1:3</b>} label="1:3" onClick={() => setZoom(1 / 3)} />
-          <Tool icon={<b>Fit</b>} label="Fit" onClick={() => fit()} />
+        </Group>
+        <Group>
+          <div className="no-drag flex shrink-0 flex-col items-center justify-center gap-0.5 px-1">
+            <div className="flex items-center gap-0.5">
+              <Mini onClick={() => setZoom(scale / 1.25)}><ZoomOut className="h-3.5 w-3.5" /></Mini>
+              <span className="w-10 text-center text-[10px] tabular-nums">{Math.round(scale * 100)}%</span>
+              <Mini onClick={() => setZoom(scale * 1.25)}><ZoomIn className="h-3.5 w-3.5" /></Mini>
+            </div>
+            <div className="flex items-center gap-0.5">
+              <Mini onClick={() => setZoom(1)}>1:1</Mini>
+              <Mini onClick={() => setZoom(0.5)}>1:2</Mini>
+              <Mini onClick={() => setZoom(1 / 3)}>1:3</Mini>
+              <Mini onClick={() => fit()}>Fit</Mini>
+            </div>
+          </div>
           <Tool icon={<Columns2 />} label="Confronta" active={compare} onClick={() => setCompare((c) => !c)} />
           <Tool icon={<SlidersHorizontal className="text-primary" />} label="Strumenti" active={toolsOpen} onClick={() => setToolsOpen((o) => !o)} />
           <Tool icon={<Camera />} label="Screenshot" onClick={screenshot} />
-          <Tool icon={<Eraser className="text-chart-3" />} label="Senza metadati" onClick={deepClean} />
+          <Tool icon={<Eraser className="text-chart-3" />} label="No meta" onClick={deepClean} />
         </Group>
         <Group>
           <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/")} />
