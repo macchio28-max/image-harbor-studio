@@ -182,6 +182,23 @@ export function LomaViewer() {
     }
   };
 
+  // Desktop: photos opened from Finder/Explorer (double-click or "Apri con").
+  const importRef = useRef(importFiles);
+  importRef.current = importFiles;
+  useEffect(() => {
+    const desk = (window as any).lomaDesktop;
+    if (!desk?.getInitialFile) return;
+    const load = (f: { name: string; bytes: Uint8Array } | null) => {
+      if (!f) return;
+      const file = new File([f.bytes as BlobPart], f.name);
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      importRef.current(dt.files);
+    };
+    desk.getInitialFile().then(load).catch(() => {});
+    return desk.onFileOpened?.(load);
+  }, []);
+
   const clearCache = async () => {
     session.forEach((s) => s.thumb?.startsWith("blob:") && URL.revokeObjectURL(s.thumb));
     setSession((s) => s.map((x) => ({ ...x, thumb: null })));

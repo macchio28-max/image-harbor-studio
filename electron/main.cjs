@@ -25,6 +25,34 @@ function launch(exe, files) {
   } catch (e) { return { ok: false, error: String(e) }; }
 }
 
+// Files opened from Finder/Explorer (double-click or "Apri con LoMa VIEWER").
+const IMG_EXT = /\.(png|jpe?g|webp|avif|gif|bmp|tiff?|dng|cr2|cr3|nef|arw|rw2|orf)$/i;
+let mainWin = null;
+let pendingFile = null;
+let rendererReady = false;
+const fileFromArgv = (argv) => argv.slice(1).find((a) => !a.startsWith("-") && IMG_EXT.test(a) && fs.existsSync(a)) || null;
+function readOpened(p) {
+  try { return { path: p, name: path.basename(p), bytes: new Uint8Array(fs.readFileSync(p)) }; } catch { return null; }
+}
+function deliverFile(p) {
+  if (!p) return;
+  if (mainWin && rendererReady) {
+    const f = readOpened(p);
+    if (f) mainWin.webContents.send("loma:onFileOpened", f);
+    if (mainWin.isMinimized()) mainWin.restore();
+    mainWin.focus();
+  } else pendingFile = p;
+}
+pendingFile = fileFromArgv(process.argv);
+app.on("open-file", (event, filePath) => { event.preventDefault(); deliverFile(filePath); });
+if (!app.requestSingleInstanceLock()) app.quit();
+else app.on("second-instance", (_e, argv) => deliverFile(fileFromArgv(argv)));
+ipcMain.handle("loma:getInitialFile", () => {
+  rendererReady = true;
+  const p = pendingFile; pendingFile = null;
+  return p ? readOpened(p) : null;
+});
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1600, height: 1000, backgroundColor: "#0b0f17",
@@ -33,6 +61,9 @@ function createWindow() {
     webPreferences: { contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, "preload.cjs") },
   });
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
+  mainWin = win;
+  win.webContents.on("did-start-loading", () => { rendererReady = false; });
+  win.on("closed", () => { if (mainWin === win) { mainWin = null; rendererReady = false; } });
   win.loadURL(URL);
 }
 
