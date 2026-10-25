@@ -60,7 +60,11 @@ function createWindow() {
     icon: path.join(__dirname, "..", "public", "icon-512.png"),
     webPreferences: { contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, "preload.cjs") },
   });
-  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    // Sign-in popups for Google Drive / OneDrive must stay inside the app so the login can return.
+    if (/^https:\/\/(accounts\.google\.com|login\.microsoftonline\.com|login\.live\.com)\//.test(url)) return { action: "allow" };
+    shell.openExternal(url); return { action: "deny" };
+  });
   mainWin = win;
   win.webContents.on("did-start-loading", () => { rendererReady = false; });
   win.on("closed", () => { if (mainWin === win) { mainWin = null; rendererReady = false; } });
