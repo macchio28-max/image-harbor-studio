@@ -65,6 +65,9 @@ ipcMain.handle("loma:launchWithData", (_e, exe, fileName, bytes) => {
   fs.writeFileSync(p, Buffer.from(bytes));
   return { ...launch(exe, [p]), file: p };
 });
+// Frees space/RAM from exported-photo temp files and Chromium's volatile network cache.
+// Deliberately does NOT touch serviceworkers/cachestorage: those hold the offline copy of
+// the app, so wiping them would break offline use whenever the button is pressed without internet.
 ipcMain.handle("loma:clearCache", async () => {
   const dir = path.join(os.tmpdir(), "loma-viewer");
   let freed = 0;
@@ -72,8 +75,7 @@ ipcMain.handle("loma:clearCache", async () => {
   walk(dir);
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   try { freed += await session.defaultSession.getCacheSize(); } catch {}
-  await session.defaultSession.clearCache();
-  await session.defaultSession.clearStorageData({ storages: ["serviceworkers", "cachestorage"] });
+  try { await session.defaultSession.clearCache(); } catch {}
   return { ok: true, freed };
 });
 ipcMain.handle("loma:openPath", (_e, p) => shell.openPath(p));
