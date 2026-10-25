@@ -17,6 +17,18 @@ export function Filmstrip({ items, total, current, filter, setFilter, onSelect, 
   useEffect(() => {
     ref.current?.querySelector(`[data-id="${current}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [current]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const h = (e: WheelEvent) => {
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      const d = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1);
+      el.scrollLeft += d * 1.5;
+    };
+    el.addEventListener("wheel", h, { passive: false });
+    return () => el.removeEventListener("wheel", h);
+  }, []);
   const chip = (active: boolean) =>
     `rounded px-2 py-0.5 text-xs whitespace-nowrap ${active ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-accent"}`;
 

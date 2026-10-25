@@ -1,0 +1,63 @@
+import { useEffect, useRef } from "react";
+import { Flag, Lock, Star, ImageOff } from "lucide-react";
+import type { CullItem } from "./culling";
+
+type Props = {
+  items: CullItem[];
+  current: string | null;
+  size: number;
+  setSize: (n: number) => void;
+  onPick: (id: string) => void;
+  onOpen: (id: string) => void;
+};
+
+export function ContactSheet({ items, current, size, setSize, onPick, onOpen }: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.querySelector(`[data-id="${current}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [current]);
+  return (
+    <div
+      data-grid
+      className="absolute inset-0 z-40 flex flex-col bg-canvas"
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
+        <span>Griglia · {items.length} foto</span>
+        <span className="ml-auto">Dimensione</span>
+        <input type="range" min={100} max={320} value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-32 accent-primary" />
+      </div>
+      <div ref={ref} className="grid flex-1 content-start gap-2 overflow-y-auto p-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${size}px, 1fr))` }}>
+        {items.map((i) => (
+          <button
+            key={i.id}
+            data-id={i.id}
+            onClick={() => onPick(i.id)}
+            onDoubleClick={() => onOpen(i.id)}
+            className={`flex flex-col overflow-hidden rounded-md border-2 bg-toolbar text-left ${i.id === current ? "border-primary" : "border-transparent hover:border-border"}`}
+          >
+            <div className="relative aspect-[3/2] w-full bg-background">
+              {i.thumb ? (
+                <img src={i.thumb} alt={i.file.name} loading="lazy" className="h-full w-full object-contain" />
+              ) : (
+                <div className="flex h-full items-center justify-center text-muted-foreground"><ImageOff className="h-6 w-6" /></div>
+              )}
+              {i.locked && <span className="absolute right-1 top-1 rounded bg-background/80 p-0.5 text-chart-3"><Lock className="h-3.5 w-3.5" /></span>}
+              {i.flagged && <span className="absolute left-1 top-1 rounded bg-background/80 p-0.5 text-primary"><Flag className="h-3.5 w-3.5 fill-current" /></span>}
+            </div>
+            <div className="flex items-center gap-1 px-1.5 py-1">
+              <span className="min-w-0 flex-1 truncate text-[11px]">{i.file.name}</span>
+              <span className="flex shrink-0 text-chart-3">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <Star key={n} className={`h-2.5 w-2.5 ${n <= i.rating ? "fill-current" : "opacity-25"}`} />
+                ))}
+              </span>
+            </div>
+          </button>
+        ))}
+        {!items.length && <div className="col-span-full py-10 text-center text-sm text-muted-foreground">Nessuna foto corrisponde al filtro.</div>}
+      </div>
+    </div>
+  );
+}
