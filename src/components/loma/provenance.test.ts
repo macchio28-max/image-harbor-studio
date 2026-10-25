@@ -16,12 +16,12 @@ describe("provenance", () => {
     const b = png([["tEXt", enc("parameters\0a red fox\nNegative prompt: blur\nSteps: 20, Sampler: Euler a, CFG scale: 7, Seed: 1234")], ["IEND", new Uint8Array()]]);
     const r = analyze(b, {});
     expect(r.level).toBe("ai");
-    expect(r.findings[0].signature).toBe("Chunk PNG parameters");
-    expect(r.findings[0].details).toContainEqual(["Prompt", "a red fox"]);
-    expect(r.findings[0].details).toContainEqual(["Seed", "1234"]);
+    expect(r.findings[0]!.signature).toBe("Chunk PNG parameters");
+    expect(r.findings[0]!.details).toContainEqual(["Prompt", "a red fox"]);
+    expect(r.findings[0]!.details).toContainEqual(["Seed", "1234"]);
   });
   it("flags Midjourney in Software tag", () => {
-    expect(analyze(new Uint8Array(10), { Software: "Midjourney v6" }).findings[0].engine).toBe("Midjourney");
+    expect(analyze(new Uint8Array(10), { Software: "Midjourney v6" }).findings[0]!.engine).toBe("Midjourney");
   });
   it("Photoshop alone is only partial", () => {
     expect(analyze(new Uint8Array(10), { Software: "Adobe Photoshop 25.0" }).level).toBe("partial");

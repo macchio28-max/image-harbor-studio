@@ -36,7 +36,7 @@ export function parseA1111(text: string): [string, string][] {
   if (st >= 0) {
     for (const k of ["Steps", "Sampler", "CFG scale", "Seed", "Size", "Model", "Model hash"]) {
       const m = text.slice(st).match(new RegExp(`${k}:\\s*([^,\\n]+)`));
-      if (m) out.push([k === "Steps" ? "Step" : k, m[1].trim()]);
+      if (m) out.push([k === "Steps" ? "Step" : k, m[1]!.trim()]);
     }
   }
   return out;
@@ -106,8 +106,8 @@ export function analyze(bytes: Uint8Array, meta: Record<string, any>): Provenanc
     const blob = (gen?.[1] ?? "") + " " + raw.slice(0, 0);
     const eng = GENERATORS.find(([r]) => r.test(blob) || r.test(signer?.[1] ?? ""))?.[1];
     const details: [string, string][] = [];
-    if (gen) details.push(["Claim generator", gen[1].trim()]);
-    if (signer) details.push(["Firmatario", signer[1].trim()]);
+    if (gen) details.push(["Claim generator", gen[1]!.trim()]);
+    if (signer) details.push(["Firmatario", signer[1]!.trim()]);
     details.push(["Asserzione AI", aiAssert ? "Presente" : "Non trovata"]);
     findings.push({ engine: eng ?? (AUTH.test(blob + (signer?.[1] ?? "")) ? "Autenticità fotocamera (C2PA)" : "C2PA Content Credentials"), signature: "C2PA Manifest (JUMBF)", details });
     bump(aiAssert || eng ? "ai" : "partial");
@@ -116,8 +116,8 @@ export function analyze(bytes: Uint8Array, meta: Record<string, any>): Provenanc
   // XMP IPTC Digital Source Type
   const dst = raw.match(/DigitalSourceType[^a-zA-Z]{0,4}[^"<>]*?(trainedAlgorithmicMedia|compositeWithTrainedAlgorithmicMedia|algorithmicMedia|compositeSynthetic)/);
   if (dst) {
-    const composite = dst[1].startsWith("composite");
-    findings.push({ engine: "Contenuto AI dichiarato (IPTC)", signature: "Tag XMP Generative", details: [["DigitalSourceType", dst[1]], ["Significato", composite ? "Foto modificata con AI" : "Generata da AI"]] });
+    const composite = dst[1]!.startsWith("composite");
+    findings.push({ engine: "Contenuto AI dichiarato (IPTC)", signature: "Tag XMP Generative", details: [["DigitalSourceType", dst[1]!], ["Significato", composite ? "Foto modificata con AI" : "Generata da AI"]] });
     bump("ai");
   }
 
