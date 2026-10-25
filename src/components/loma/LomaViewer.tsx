@@ -273,6 +273,22 @@ export function LomaViewer() {
     } catch { return false; }
   };
   const openAI = async (name: string, url: string) => {
+    const mobile = isTouchDevice();
+    if (img && imgEl.current && (mobile || typeof navigator.canShare === "function")) {
+      const b = await renderClean(imgEl.current, adjust, crop, "image/jpeg");
+      const f = new File([b], `${baseName(img.file.name)}.jpg`, { type: "image/jpeg" });
+      if (navigator.canShare?.({ files: [f] })) {
+        try {
+          await navigator.share({ files: [f], title: "Invia a " + name, text: "Analizza questa immagine" });
+        } catch (e: any) {
+          if (e?.name !== "AbortError") notify(`Condivisione non riuscita: riprova toccando ${name}.`);
+        }
+        return;
+      }
+      if (mobile) { notify("Questo dispositivo non supporta la condivisione di file."); return; }
+    }
+    if (!img && isTouchDevice()) { notify(`Apri prima un'immagine da inviare a ${name}.`); return; }
+    // Desktop without native file sharing: web link + clipboard
     const ok = await copyToClipboard();
     window.open(url, "_blank", "noopener");
     notify(ok ? `Immagine copiata: incollala in ${name}.` : `${name} aperto.`);
