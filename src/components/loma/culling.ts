@@ -13,7 +13,7 @@ const truthy = (v: unknown) =>
   v === true || v === 1 || (typeof v === "string" && /^(1|true|yes|on|protected|locked)$/i.test(v.trim()));
 
 /** Reads in-camera rating, lock/protection and pick flag from parsed metadata. */
-export function cullFromMeta(m: Record<string, any>) {
+export function cullFromMeta(m: any) {
   let rating = 0;
   const r = Number(m.Rating ?? (m.RatingPercent != null ? Number(m.RatingPercent) / 20 : 0));
   if (Number.isFinite(r)) rating = Math.max(0, Math.min(5, Math.round(r)));

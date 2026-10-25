@@ -170,8 +170,8 @@ export function LomaViewer() {
     const base: CullItem[] = files.map((file, i) => ({ id: `${i}-${file.name}`, file, thumb: null, rating: 0, locked: false, flagged: false }));
     setSession(base);
     setStripOpen(true);
-    setCurId(base[0].id);
-    openFile(base[0].file);
+    setCurId(base[0]!.id);
+    openFile(base[0]!.file);
     notify(`Importate ${files.length} foto.`);
     // read previews + in-camera tags in small parallel batches
     for (let i = 0; i < base.length; i += 6) {
@@ -528,11 +528,11 @@ export function LomaViewer() {
           onPointerMove={onMove}
           onPointerUp={onUp}
           onPointerCancel={onUp}
-          onTouchStart={(e) => { const t = e.touches[0]; swipe.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null; }}
+          onTouchStart={(e) => { const t = e.touches[0]!; swipe.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null; }}
           onTouchEnd={(e) => {
             const s = swipe.current; swipe.current = null;
             if (!s || session.length < 2 || scale > fitScale.current * 1.02) return;
-            const t = e.changedTouches[0], dx = t.clientX - s.x, dy = t.clientY - s.y;
+            const t = e.changedTouches[0]!, dx = t.clientX - s.x, dy = t.clientY - s.y;
             if (Math.abs(dx) > 80 && Math.abs(dy) < 60) step(dx < 0 ? 1 : -1);
           }}
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
