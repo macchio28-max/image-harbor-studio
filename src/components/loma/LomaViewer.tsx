@@ -3,10 +3,11 @@ import {
   Save, MousePointer2, Hand, ZoomIn, ZoomOut, Columns2, SlidersHorizontal, Camera, Eraser,
   MessageCircle, Circle, Sparkles, Clapperboard, Gem, Maximize2, HardDrive, Cloud, CloudSun, Mail,
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
-  FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, Repeat, LayoutGrid, Square,
+  FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, Repeat, LayoutGrid, Square, Printer, Share2,
 } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 import { ConvertDialog } from "./ConvertDialog";
+import { PrintDialog } from "./PrintDialog";
 import logo from "@/assets/loma-logo.png.asset.json";
 import {
   type Adjust, defaultAdjust, renderClean, download, baseName, formatBytes, exposure,
@@ -47,6 +48,7 @@ export function LomaViewer() {
   const [imgReady, setImgReady] = useState(0);
   const [topazOpen, setTopazOpen] = useState(false);
   const [convOpen, setConvOpen] = useState(false);
+  const [printSrc, setPrintSrc] = useState<string | null>(null);
   const [waAsk, setWaAsk] = useState(false);
   const [mailAsk, setMailAsk] = useState(false);
   const [hist, setHist] = useState<Uint32Array[] | null>(null);
@@ -577,6 +579,23 @@ export function LomaViewer() {
   // Cloud = save the shown (edited, metadata-free) photo INTO the user's cloud space.
   const isEdited = () => !isNeutral(adjust) || !!crop || adjust.rotation !== 0 || adjust.flipH || adjust.straighten !== 0;
   /** Original file (name + extension) when unedited; edited PNG otherwise. */
+  const openPrint = async () => {
+    if (!img || !imgEl.current) { notify("Apri prima un'immagine da stampare"); return; }
+    const b = await renderClean(imgEl.current, adjust, crop, "image/jpeg");
+    setPrintSrc(URL.createObjectURL(b));
+  };
+  const sharePhoto = async () => {
+    if (!img || !imgEl.current) return;
+    try {
+      const b = await renderClean(imgEl.current, adjust, crop, "image/jpeg");
+      const f = new File([b], `${baseName(img.file.name)}.jpg`, { type: "image/jpeg" });
+      const desk = (window as any).lomaDesktop;
+      if (desk?.shareFile && desk.platform === "darwin") { const r = await desk.shareFile(f, f.name); if (r?.ok) return; }
+      if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f], title: f.name }); return; }
+      download(f, f.name);
+      notify("Condivisione non supportata qui: foto scaricata.");
+    } catch (e: any) { if (e?.name !== "AbortError") notify("Condivisione non riuscita"); }
+  };
   const outputFile = async (suffix = ""): Promise<File> => {
     if (!isEdited()) return img!.file;
     const b = await renderClean(imgEl.current!, adjust, crop, "image/png");
@@ -781,6 +800,7 @@ export function LomaViewer() {
           <Tool icon={<B.LightroomClassicIcon />} label="Lrc" tip="Adobe Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
           <Tool icon={<Settings />} label="App" tip="Percorsi programmi" onClick={() => setTopazOpen(true)} />
           <Tool icon={<Repeat />} label="Converti" tip="Converti immagini (singola o batch)" onClick={() => (img || session.length ? setConvOpen(true) : notify("Apri prima un'immagine"))} />
+          <Tool icon={<Printer />} label="Stampa" tip="Stampa fotografica" onClick={openPrint} />
           <Tool icon={<Trash2 />} label="Cache" tip="Svuota cache e memoria" onClick={clearCache} />
         </Group>
         <Group last>
@@ -849,6 +869,10 @@ export function LomaViewer() {
               <button onClick={async () => { const ok = await copyToClipboard(); ok ? sonnerToast.success("Immagine copiata negli appunti", { duration: QUICK_MS }) : sonnerToast.error("Copia non riuscita"); }}
                 title="Copia negli appunti" className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
                 <Copy className="h-4 w-4" />
+              </button>
+              <button onClick={sharePhoto} title="Condividi"
+                className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
+                <Share2 className="h-4 w-4" />
               </button>
               <button onClick={toggleFullscreen} title={isFull ? "Esci da schermo intero" : "Schermo intero"}
                 className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
@@ -1003,6 +1027,7 @@ export function LomaViewer() {
         type="file" multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }}
       />
       {convOpen && <ConvertDialog current={img?.file ?? null} preview={img?.url ?? null} size={img ? { w: img.w, h: img.h } : null} session={session} visible={visible} onClose={() => setConvOpen(false)} />}
+      {printSrc && <PrintDialog src={printSrc} onClose={() => { URL.revokeObjectURL(printSrc); setPrintSrc(null); }} />}
       {topazOpen && <TopazSettings onClose={() => setTopazOpen(false)} />}
       {mailAsk && <MailChoice onClose={() => setMailAsk(false)} onPick={(m, u) => { setMailAsk(false); localStorage.setItem("loma.mail.mode", m); if (u) localStorage.setItem("loma.mail.url", u); mail(); }} />}
       {waAsk && (
