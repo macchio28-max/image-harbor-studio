@@ -32,22 +32,7 @@ export function DevelopPanel(props: {
   const reset = (...keys: (keyof Adjust)[]) => setAdjust((x) => { const n: any = { ...x }; keys.forEach((k) => (n[k] = structuredClone(defaultAdjust[k]))); return n; });
   const show = (id: string) => SECTIONS[tab].includes(id);
 
-  const Sec = ({ id, title, keys, auto, children }: { id: string; title: string; keys?: (keyof Adjust)[]; auto?: () => void; children: ReactNode }) =>
-    !show(id) ? null : (
-      <div className="border-b border-border/70">
-        <div className="flex items-center gap-1 bg-secondary/60 px-2 py-1.5">
-          <button className="flex flex-1 items-center gap-1 text-left text-[13px]" onClick={() => setOpen((o) => ({ ...o, [id]: !o[id] }))}>
-            {open[id] ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
-            {title}
-          </button>
-          {auto && <HBtn title="Auto" onClick={auto}><Wand2 className="h-3.5 w-3.5" /></HBtn>}
-          {keys && <HBtn title="Ripristina sezione" onClick={() => reset(...keys)}><RotateCcw className="h-3.5 w-3.5" /></HBtn>}
-          <HBtn title="Ripristina tutto" onClick={props.onResetAll}><MoreHorizontal className="h-3.5 w-3.5" /></HBtn>
-        </div>
-        {open[id] && <div className="space-y-1.5 px-3 py-2.5">{children}</div>}
-      </div>
-    );
-
+  const ctx: Ctx = { show, open, toggle: (id) => setOpen((o) => ({ ...o, [id]: !o[id] })), reset, resetAll: props.onResetAll };
   const S = (label: string, k: keyof Adjust, min: number, max: number, step = 1, track?: string) => (
     <Slider label={label} value={a[k] as number} min={min} max={max} step={step} track={track}
       def={defaultAdjust[k] as number}
@@ -76,9 +61,9 @@ export function DevelopPanel(props: {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto text-sm">
         {!props.hasImage && <p className="px-3 py-2 text-xs text-muted-foreground">Apri un'immagine per usare le regolazioni.</p>}
-        <Sec id="hist" title="Histogram"><Histogram hist={props.hist} /></Sec>
+        <Sec c={ctx} id="hist" title="Histogram"><Histogram hist={props.hist} /></Sec>
         {tab === "tether" && <p className="px-3 py-3 text-xs text-muted-foreground">Lo scatto collegato (tethering) a una fotocamera richiede la versione desktop di LoMa VIEWER con fotocamera connessa via USB.</p>}
-        <Sec id="base" title="Base Characteristics" keys={["curve"]}>
+        <Sec c={ctx} id="base" title="Base Characteristics" keys={["curve"]}>
           <Row label="Profilo ICC"><select className="sel" disabled><option>sRGB (incorporato)</option></select></Row>
           <Row label="Curva">
             <select className="sel" value={a.curve} onChange={(e) => set("curve", e.target.value as Adjust["curve"])}>
@@ -86,7 +71,7 @@ export function DevelopPanel(props: {
             </select>
           </Row>
         </Sec>
-        <Sec id="wb" title="White Balance" keys={["kelvin", "tint", "wbMode"]} auto={props.onAutoWb}>
+        <Sec c={ctx} id="wb" title="White Balance" keys={["kelvin", "tint", "wbMode"]} auto={props.onAutoWb}>
           <Row label="Mode">
             <div className="flex gap-1">
               <select className="sel" value={a.wbMode} onChange={(e) => {
@@ -104,21 +89,21 @@ export function DevelopPanel(props: {
           {S("Kelvin", "kelvin", 2000, 12000, 10, "linear-gradient(90deg,hsl(225 80% 55%),hsl(0 0% 85%),hsl(55 90% 55%))")}
           {S("Tint", "tint", -100, 100, 1, "linear-gradient(90deg,hsl(120 60% 45%),hsl(0 0% 85%),hsl(310 65% 58%))")}
         </Sec>
-        <Sec id="exp" title="Exposure" keys={["exposure", "contrast", "brightness", "saturation"]} auto={props.onAutoExposure}>
+        <Sec c={ctx} id="exp" title="Exposure" keys={["exposure", "contrast", "brightness", "saturation"]} auto={props.onAutoExposure}>
           {S("Exposure", "exposure", -4, 4, 0.01)}{S("Contrast", "contrast", -100, 100)}{S("Brightness", "brightness", -100, 100)}{S("Saturation", "saturation", -100, 100)}
         </Sec>
-        <Sec id="hdr" title="High Dynamic Range" keys={["highlight", "shadow", "white", "black"]}>
+        <Sec c={ctx} id="hdr" title="High Dynamic Range" keys={["highlight", "shadow", "white", "black"]}>
           {S("Highlight", "highlight", -100, 100)}{S("Shadow", "shadow", -100, 100)}{S("White", "white", -100, 100)}{S("Black", "black", -100, 100)}
         </Sec>
-        <Sec id="clarity" title="Clarity & Structure" keys={["clarity", "structure"]}>
+        <Sec c={ctx} id="clarity" title="Clarity & Structure" keys={["clarity", "structure"]}>
           {S("Clarity", "clarity", -100, 100)}{S("Structure", "structure", -100, 100)}
         </Sec>
-        <Sec id="dehaze" title="Dehaze" keys={["dehaze"]}>{S("Amount", "dehaze", -100, 100)}</Sec>
-        <Sec id="layers" title="Layers" keys={["layerOpacity"]}>
+        <Sec c={ctx} id="dehaze" title="Dehaze" keys={["dehaze"]}>{S("Amount", "dehaze", -100, 100)}</Sec>
+        <Sec c={ctx} id="layers" title="Layers" keys={["layerOpacity"]}>
           <div className="rounded border border-border bg-background/40 px-2 py-1 text-xs">Sfondo · Livello di regolazione</div>
           {S("Opacità", "layerOpacity", 0, 100)}
         </Sec>
-        <Sec id="vig" title="Vignetting" keys={["vigAmount", "vigMethod"]}>
+        <Sec c={ctx} id="vig" title="Vignetting" keys={["vigAmount", "vigMethod"]}>
           {S("Amount", "vigAmount", -4, 4, 0.01)}
           <Row label="Method">
             <select className="sel" value={a.vigMethod} onChange={(e) => set("vigMethod", e.target.value as Adjust["vigMethod"])}>
@@ -126,14 +111,14 @@ export function DevelopPanel(props: {
             </select>
           </Row>
         </Sec>
-        <Sec id="styles" title="Styles and Presets">
+        <Sec c={ctx} id="styles" title="Styles and Presets">
           <div className="grid grid-cols-2 gap-1.5">
             {PRESETS.map((p) => (
               <button key={p.name} onClick={() => setAdjust((x) => ({ ...x, ...p.set }))} className="rounded border border-border bg-secondary px-2 py-1.5 text-xs hover:bg-accent">{p.name}</button>
             ))}
           </div>
         </Sec>
-        <Sec id="crop" title="Crop" keys={["straighten", "rotation", "flipH"]}>
+        <Sec c={ctx} id="crop" title="Crop" keys={["straighten", "rotation", "flipH"]}>
           <Row label="Rapporto">
             <select className="sel" defaultValue="" onChange={(e) => props.onAspect(e.target.value ? +e.target.value : null)}>
               <option value="">Libero (Seleziona)</option><option value="1">1:1</option><option value={3 / 2}>3:2</option><option value={4 / 3}>4:3</option>
@@ -150,10 +135,10 @@ export function DevelopPanel(props: {
           </div>
           <p className="text-[11px] text-muted-foreground">Rapporto libero: usa "Seleziona" e trascina sull'immagine.</p>
         </Sec>
-        <Sec id="cb" title="Color Balance" keys={["cbShadows", "cbMid", "cbHigh"]}>
+        <Sec c={ctx} id="cb" title="Color Balance" keys={["cbShadows", "cbMid", "cbHigh"]}>
           {tone("Shadows", "cbShadows")}{tone("Midtones", "cbMid")}{tone("Highlights", "cbHigh")}
         </Sec>
-        <Sec id="ce" title="Color Editor" keys={["hsl"]}>
+        <Sec c={ctx} id="ce" title="Color Editor" keys={["hsl"]}>
           <div className="flex flex-wrap gap-1">
             {HSL_CH.map((c) => (
               <button key={c} title={CH_LABEL[c]} onClick={() => setCeCh(c)} className={`h-6 w-6 rounded-full border-2 ${ceCh === c ? "border-foreground" : "border-transparent"}`} style={{ background: CH_COLOR[c] }} />
@@ -165,15 +150,34 @@ export function DevelopPanel(props: {
               onChange={(v) => setAdjust((x) => ({ ...x, hsl: { ...x.hsl, [ceCh]: { ...x.hsl[ceCh], [p]: v } } }))} />
           ))}
         </Sec>
-        <Sec id="sharp" title="Sharpening" keys={["sharpAmount", "sharpRadius"]}>
+        <Sec c={ctx} id="sharp" title="Sharpening" keys={["sharpAmount", "sharpRadius"]}>
           {S("Amount", "sharpAmount", 0, 100)}{S("Radius", "sharpRadius", 0.3, 5, 0.1)}
         </Sec>
-        <Sec id="nr" title="Noise Reduction" keys={["nrLum", "nrColor"]}>
+        <Sec c={ctx} id="nr" title="Noise Reduction" keys={["nrLum", "nrColor"]}>
           {S("Luminance", "nrLum", 0, 100)}{S("Color", "nrColor", 0, 100)}
         </Sec>
       </div>
       <button onClick={props.onResetAll} className="m-2 rounded-md border border-border py-1.5 text-sm hover:bg-accent">Ripristina tutte le regolazioni</button>
     </aside>
+  );
+}
+
+type Ctx = { show: (id: string) => boolean; open: Record<string, boolean>; toggle: (id: string) => void; reset: (...k: (keyof Adjust)[]) => void; resetAll: () => void };
+function Sec({ c, id, title, keys, auto, children }: { c: Ctx; id: string; title: string; keys?: (keyof Adjust)[]; auto?: () => void; children: ReactNode }) {
+  if (!c.show(id)) return null;
+  return (
+    <div className="border-b border-border/70">
+      <div className="flex items-center gap-1 bg-secondary/60 px-2 py-1.5">
+        <button className="flex flex-1 items-center gap-1 text-left text-[13px]" onClick={() => c.toggle(id)}>
+          {c.open[id] ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+          {title}
+        </button>
+        {auto && <HBtn title="Auto" onClick={auto}><Wand2 className="h-3.5 w-3.5" /></HBtn>}
+        {keys && <HBtn title="Ripristina sezione" onClick={() => c.reset(...keys)}><RotateCcw className="h-3.5 w-3.5" /></HBtn>}
+        <HBtn title="Ripristina tutto" onClick={c.resetAll}><MoreHorizontal className="h-3.5 w-3.5" /></HBtn>
+      </div>
+      {c.open[id] && <div className="space-y-1.5 px-3 py-2.5">{children}</div>}
+    </div>
   );
 }
 
