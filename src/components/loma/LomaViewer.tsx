@@ -7,11 +7,13 @@ import {
 } from "lucide-react";
 import logo from "@/assets/loma-logo.png.asset.json";
 import {
-  type Adjust, defaultAdjust, filterOf, renderClean, download, baseName, formatBytes, exposure,
+  type Adjust, defaultAdjust, renderClean, download, baseName, formatBytes, exposure,
   nativeScreenSize,
 } from "./viewer-utils";
 
 import * as B from "./brand-icons";
+import { DevelopPanel } from "./DevelopPanel";
+import { developCanvas, autoMeasure } from "./develop";
 
 type Meta = Record<string, any>;
 type Loaded = { file: File; url: string; w: number; h: number; meta: Meta };
@@ -31,7 +33,10 @@ export function LomaViewer() {
   const [compare, setCompare] = useState(false);
   const [split, setSplit] = useState(50);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [imgReady, setImgReady] = useState(0);
   const [topazOpen, setTopazOpen] = useState(false);
+  const [hist, setHist] = useState<Uint32Array[] | null>(null);
+  const preview = useRef<HTMLCanvasElement>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
   const stage = useRef<HTMLDivElement>(null);
@@ -45,6 +50,40 @@ export function LomaViewer() {
   const notify = (m: string) => {
     setToast(m);
     setTimeout(() => setToast(null), 3200);
+  };
+
+  // Live development preview (downscaled for speed)
+  useEffect(() => {
+    if (!img) { setHist(null); return; }
+    let cancel = false;
+    const id = requestAnimationFrame(() => {
+      const src = imgEl.current, cv = preview.current;
+      if (cancel || !src || !cv || !src.complete || !src.naturalWidth) return;
+      const k = Math.min(1, 1600 / Math.max(img.w, img.h));
+      const w = Math.max(1, Math.round(img.w * k)), h = Math.max(1, Math.round(img.h * k));
+      const { canvas, hist: hh } = developCanvas(src, w, h, adjust, k, true);
+      cv.width = w; cv.height = h;
+      cv.getContext("2d")!.drawImage(canvas, 0, 0);
+      setHist(hh);
+    });
+    return () => { cancel = true; cancelAnimationFrame(id); };
+  }, [img, adjust, imgReady]);
+
+  const autoWb = () => {
+    if (!need()) return;
+    const r = autoMeasure(imgEl.current!, img!.w, img!.h);
+    setAdjust((a) => ({ ...a, wbMode: "auto", kelvin: r.kelvin, tint: r.tint }));
+  };
+  const autoExposure = () => {
+    if (!need()) return;
+    const r = autoMeasure(imgEl.current!, img!.w, img!.h);
+    setAdjust((a) => ({ ...a, exposure: r.exposure }));
+  };
+  const aspectSel = (ratio: number | null) => {
+    if (!img || !ratio) { setSel(null); return; }
+    let w = img.w, h = w / ratio;
+    if (h > img.h) { h = img.h; w = h * ratio; }
+    setSel({ x: (img.w - w) / 2, y: (img.h - h) / 2, w, h });
   };
 
   const fit = useCallback((w?: number, h?: number) => {
@@ -218,8 +257,8 @@ export function LomaViewer() {
       const k = n.w / r.width;
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, c.width, c.height);
-      ctx.filter = filterOf(adjust);
-      ctx.drawImage(imgEl.current!, off.x * k, off.y * k, img!.w * scale * k, img!.h * scale * k);
+      const dev = developCanvas(imgEl.current!, img!.w, img!.h, adjust, 1).canvas;
+      ctx.drawImage(dev, off.x * k, off.y * k, img!.w * scale * k, img!.h * scale * k);
       c.toBlob((b) => b && download(b, `LoMa_view_${n.w}x${n.h}.png`), "image/png");
       notify(`Vista catturata a ${n.w}×${n.h} senza interfaccia.`);
     }
@@ -314,11 +353,10 @@ export function LomaViewer() {
   const transform = `translate(${off.x}px, ${off.y}px) scale(${scale})`;
   const imgStyle = (filtered: boolean): React.CSSProperties => ({
     width: img?.w, height: img?.h, transformOrigin: "0 0", transform,
-    filter: filtered ? filterOf(adjust) : undefined,
     imageRendering: scale >= 2 ? "pixelated" : "auto",
   });
   const rotStyle: React.CSSProperties = {
-    transform: `rotate(${adjust.rotation}deg) scaleX(${adjust.flipH ? -1 : 1})`,
+    transform: `rotate(${adjust.rotation + adjust.straighten}deg) scaleX(${adjust.flipH ? -1 : 1})`,
     transformOrigin: "center", width: "100%", height: "100%",
   };
 
@@ -372,6 +410,15 @@ export function LomaViewer() {
       </header>
 
       <div className="flex min-h-0 flex-1 gap-3 p-3">
+        {toolsOpen && (
+          <DevelopPanel
+            adjust={adjust} setAdjust={setAdjust} hist={hist} hasImage={!!img}
+            onAutoWb={autoWb} onAutoExposure={autoExposure}
+            onAspect={aspectSel} onApplyCrop={applyCrop} onResetCrop={() => { setCrop(null); setSel(null); }}
+            onResetAll={() => { setAdjust(defaultAdjust); setCrop(null); setSel(null); }}
+            onClose={() => setToolsOpen(false)}
+          />
+        )}
         {/* Canvas */}
         <main
           ref={stage}
@@ -411,7 +458,8 @@ export function LomaViewer() {
               <div className="absolute inset-0" style={{ clipPath: compare ? `inset(0 0 0 ${split}%)` : undefined }}>
                 <div className="absolute left-0 top-0" style={{ width: img.w, height: img.h, transformOrigin: "0 0", transform }}>
                   <div style={rotStyle}>
-                    <img ref={imgEl} src={img.url} alt={img.file.name} draggable={false} className="max-w-none" style={{ width: img.w, height: img.h, filter: filterOf(adjust) }} />
+                    <img ref={imgEl} src={img.url} alt={img.file.name} draggable={false} onLoad={() => setImgReady((n) => n + 1)} className="hidden" />
+                    <canvas ref={preview} aria-label={img.file.name} style={{ width: img.w, height: img.h, imageRendering: scale >= 2 ? "pixelated" : "auto" }} />
                   </div>
                 </div>
               </div>
@@ -446,32 +494,6 @@ export function LomaViewer() {
                 <FolderOpen className="h-4 w-4" /> Apri...
               </button>
             </>
-          )}
-          {toolsOpen && (
-            <div onPointerDown={(e) => e.stopPropagation()} className="absolute left-3 top-3 z-30 w-72 rounded-lg border border-border bg-popover p-4 shadow-2xl">
-              <div className="mb-3 flex items-center justify-between font-semibold">
-                Strumenti <button onClick={() => setToolsOpen(false)}><X className="h-4 w-4" /></button>
-              </div>
-              <div className="mb-3 flex gap-2">
-                <Mini onClick={() => setAdjust((a) => ({ ...a, rotation: a.rotation - 90 }))}><RotateCcw className="h-4 w-4" /></Mini>
-                <Mini onClick={() => setAdjust((a) => ({ ...a, rotation: a.rotation + 90 }))}><RotateCw className="h-4 w-4" /></Mini>
-                <Mini onClick={() => setAdjust((a) => ({ ...a, flipH: !a.flipH }))}><FlipHorizontal className="h-4 w-4" /></Mini>
-                <Mini onClick={applyCrop}><Crop className="h-4 w-4" /> Ritaglia</Mini>
-              </div>
-              {(["brightness", "contrast", "saturation"] as const).map((k) => (
-                <label key={k} className="mb-2 block text-sm">
-                  <span className="flex justify-between text-muted-foreground">
-                    {{ brightness: "Luminosità", contrast: "Contrasto", saturation: "Saturazione" }[k]}
-                    <span>{adjust[k]}%</span>
-                  </span>
-                  <input type="range" min={0} max={200} value={adjust[k]} onChange={(e) => setAdjust((a) => ({ ...a, [k]: +e.target.value }))} className="w-full accent-primary" />
-                </label>
-              ))}
-              <button onClick={() => { setAdjust(defaultAdjust); setCrop(null); setSel(null); }} className="mt-1 w-full rounded-md border border-border py-1.5 text-sm hover:bg-accent">
-                Ripristina
-              </button>
-              <p className="mt-2 text-xs text-muted-foreground">Ritaglio: usa "Seleziona" e trascina sull'immagine.</p>
-            </div>
           )}
           {toast && (
             <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md bg-popover px-4 py-2 text-sm shadow-xl">{toast}</div>
