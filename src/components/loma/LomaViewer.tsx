@@ -131,7 +131,7 @@ export function LomaViewer() {
     if (pts.length === 2) {
       const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
       gesture.current = { type: "pinch", d, scale: state.current.scale };
-    } else if (mode === "select" && e.pointerType !== "touch" || (mode === "select" && pts.length === 1)) {
+    } else if (mode === "select" && pts.length === 1) {
       const p = toImage(local(e));
       gesture.current = { type: "sel", start: p };
       setSel({ x: p.x, y: p.y, w: 0, h: 0 });
