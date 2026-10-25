@@ -127,9 +127,9 @@ export function LomaViewer() {
     if (!img) return;
     (e.target as Element).setPointerCapture?.(e.pointerId);
     pointers.current.set(e.pointerId, local(e));
-    const pts = [...pointers.current.values()];
+    const pts: { x: number; y: number }[] = [...pointers.current.values()] as any;
     if (pts.length === 2) {
-      const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const d = Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y);
       gesture.current = { type: "pinch", d, scale: state.current.scale };
     } else if (mode === "select" && pts.length === 1) {
       const p = toImage(local(e));
@@ -144,10 +144,10 @@ export function LomaViewer() {
     pointers.current.set(e.pointerId, local(e));
     const g = gesture.current;
     if (!g) return;
-    const pts = [...pointers.current.values()];
+    const pts: { x: number; y: number }[] = [...pointers.current.values()] as any;
     if (g.type === "pinch" && pts.length >= 2) {
-      const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      setZoom(g.scale * (d / g.d), (pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2);
+      const d = Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y);
+      setZoom(g.scale * (d / g.d), (pts[0]!.x + pts[1]!.x) / 2, (pts[0]!.y + pts[1]!.y) / 2);
     } else if (g.type === "pan") {
       const p = local(e);
       setOff({ x: g.off.x + p.x - g.start.x, y: g.off.y + p.y - g.start.y });
