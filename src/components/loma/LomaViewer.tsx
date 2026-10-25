@@ -133,7 +133,10 @@ export function LomaViewer() {
       meta = (await exifr.parse(file, { tiff: true, exif: true, gps: true, icc: true, iptc: true, xmp: true })) ?? {};
     } catch { /* no metadata */ }
     if (RAWLIKE.test(file.name)) {
-      try {
+      const { extractRawPreview } = await import("./raw-preview");
+      const p = await extractRawPreview(file);
+      if (p) url = URL.createObjectURL(p);
+      else try {
         const th = await exifr.thumbnail(file);
         if (th) url = URL.createObjectURL(new Blob([th as BlobPart], { type: "image/jpeg" }));
       } catch { /* keep original */ }
