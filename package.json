@@ -1,5 +1,5 @@
 {
-  "name": "tanstack_start_ts",
+  "name": "loma-viewer",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -11,7 +11,11 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "electron:dev": "electron .",
+    "electron:build": "electron-builder --win --mac",
+    "electron:build:win": "electron-builder --win",
+    "electron:build:mac": "electron-builder --mac"
   },
   "overrides": {
     "rolldown": "1.2.1"
@@ -93,6 +97,45 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "8.1.5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "version": "1.0.0",
+  "main": "electron/main.cjs",
+  "description": "LoMa VIEWER",
+  "author": "Lorenzo Macchio",
+  "build": {
+    "appId": "com.loma.viewer",
+    "productName": "LoMa VIEWER",
+    "directories": {
+      "output": "electron-release"
+    },
+    "files": [
+      "electron/**/*",
+      "public/icon-512.png",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/icon-512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "public/icon-512.png",
+      "category": "public.app-category.photography"
+    }
   }
 }
