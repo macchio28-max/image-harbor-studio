@@ -3,7 +3,7 @@ import {
   Save, MousePointer2, Hand, ZoomIn, ZoomOut, Columns2, SlidersHorizontal, Camera, Eraser,
   MessageCircle, Circle, Sparkles, Clapperboard, Gem, Maximize2, HardDrive, Cloud, CloudSun, Mail,
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
-  FlipHorizontal, Crop, X, Settings,
+  FlipHorizontal, Crop, X, Settings, GalleryHorizontal,
 } from "lucide-react";
 import logo from "@/assets/loma-logo.png.asset.json";
 import {
@@ -13,6 +13,8 @@ import {
 
 import * as B from "./brand-icons";
 import { DevelopPanel } from "./DevelopPanel";
+import { Filmstrip } from "./Filmstrip";
+import { type CullItem, type CullFilter, IMAGE_RE, readCull, applyFilter } from "./culling";
 import { developCanvas, autoMeasure } from "./develop";
 
 type Meta = Record<string, any>;
@@ -93,6 +95,7 @@ export function LomaViewer() {
     const r = el.getBoundingClientRect();
     const s = Math.min((r.width - 40) / iw, (r.height - 40) / ih, 1e3);
     setScale(s);
+    fitScale.current = s;
     setOff({ x: (r.width - iw * s) / 2, y: (r.height - ih * s) / 2 });
   }, [img]);
 
