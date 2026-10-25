@@ -136,6 +136,30 @@
       ],
       "icon": "public/icon-512.png",
       "category": "public.app-category.photography"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "png",
+          "jpg",
+          "jpeg",
+          "webp",
+          "avif",
+          "gif",
+          "bmp",
+          "tiff",
+          "tif",
+          "dng",
+          "cr2",
+          "cr3",
+          "nef",
+          "arw",
+          "rw2",
+          "orf"
+        ],
+        "name": "Immagine",
+        "role": "Viewer"
+      }
+    ]
   }
 }
