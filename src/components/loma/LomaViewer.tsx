@@ -1013,7 +1013,7 @@ function isTouchDevice() {
 }
 
 function TopazSettings({ onClose }: { onClose: () => void }) {
-  const apps = ["Topaz Photo AI", "Topaz Gigapixel AI", "Adobe Photoshop", "Adobe Lightroom", "Adobe Lightroom Classic"];
+  const apps = ["Topaz Photo AI", "Topaz Gigapixel AI", "Adobe Photoshop", "Adobe Lightroom", "Adobe Lightroom Classic", "WhatsApp", "LocalSend"];
   const [vals, setVals] = useState(() => Object.fromEntries(apps.map((a) => [a, localStorage.getItem(`loma.topaz.${a}`) ?? ""])));
   const [mobile] = useState(isTouchDevice);
   const browse = async (a: string) => {
