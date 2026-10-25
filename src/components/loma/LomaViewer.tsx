@@ -17,8 +17,6 @@ import * as B from "./brand-icons";
 import { DevelopPanel } from "./DevelopPanel";
 import { Filmstrip } from "./Filmstrip";
 import { ComparePane } from "./ComparePane";
-import { CloudSetup } from "./CloudSetup";
-import { type CloudKind, getCloudCfg, uploadToCloud } from "./cloud-upload";
 import { ContactSheet } from "./ContactSheet";
 import { type CullItem, type CullFilter, IMAGE_RE, readCull, applyFilter } from "./culling";
 import { developCanvas, autoMeasure } from "./develop";
@@ -44,7 +42,6 @@ export function LomaViewer() {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [imgReady, setImgReady] = useState(0);
   const [topazOpen, setTopazOpen] = useState(false);
-  const [cloudSetup, setCloudSetup] = useState<CloudKind | null>(null);
   const [hist, setHist] = useState<Uint32Array[] | null>(null);
   const preview = useRef<HTMLCanvasElement>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -491,24 +488,48 @@ export function LomaViewer() {
 
   const uploadCloud = async (target: string, web: string) => {
     if (target !== "iCloud Drive") {
-      // Drive / OneDrive: direct upload through the service API into the configured folder.
-      const kind: CloudKind = target === "OneDrive" ? "onedrive" : "drive";
-      if (!img || !imgEl.current) { notify(`Carica prima un'immagine da caricare su ${target}.`); return; }
-      if (!getCloudCfg(kind).clientId) { setCloudSetup(kind); return; }
+      // Drive / OneDrive: copy into the folder synced by the desktop app (Google Drive for desktop / OneDrive).
+      const kind = target === "OneDrive" ? "onedrive" : "drive";
+      if (!img || !imgEl.current) { notify(`Carica prima un'immagine da salvare su ${target}.`); return; }
+      const desk = (window as any).lomaDesktop;
       const f = await outputFile();
-      const id = sonnerToast.loading(`Preparazione caricamento su ${target}...`);
-      try {
-        const link = await uploadToCloud(kind, f, (m) => sonnerToast.loading(m, { id }));
-        const desk = (window as any).lomaDesktop;
-        sonnerToast.success(`${f.name} caricato su ${target}${getCloudCfg(kind).folder ? ` in "${getCloudCfg(kind).folder}"` : ""}.`, {
-          id,
-          action: link ? { label: "Apri", onClick: () => (desk?.openExternal ? desk.openExternal(link) : window.open(link, "_blank", "noopener")) } : undefined,
-        });
-      } catch (e: any) {
-        sonnerToast.error(`Caricamento su ${target} non riuscito: ${e?.message || e}`, {
-          id, action: { label: "Impostazioni", onClick: () => setCloudSetup(kind) },
-        });
+      if (!desk?.saveToFolder) {
+        // Browser: save dialog, where the user picks the Drive/OneDrive folder.
+        const picker = (window as any).showSaveFilePicker;
+        if (picker) {
+          try {
+            const h = await picker({ suggestedName: f.name, id: `loma-${kind}` });
+            const w = await h.createWritable(); await w.write(f); await w.close();
+            notify(`Salvato in ${target}: ${h.name}`);
+          } catch (e: any) { if (e?.name !== "AbortError") notify("Salvataggio non riuscito."); }
+          return;
+        }
+        if (navigator.canShare?.({ files: [f] })) { try { await navigator.share({ files: [f], title: f.name }); } catch { /* annullato */ } return; }
+        download(f, f.name);
+        notify(`Spostalo nella cartella di ${target}.`);
+        return;
       }
+      const key = `loma.cloudDir.${kind}`;
+      let dir = localStorage.getItem(key) || "";
+      if (!dir) {
+        const guess = await desk.cloudDir(kind);
+        dir = await desk.pickFolder(`Scegli la cartella di ${target} dove salvare le foto`, guess);
+        if (!dir) { notify(guess ? "Nessuna cartella scelta." : `Installa l'app ${target} sul computer e scegli la sua cartella.`); return; }
+        localStorage.setItem(key, dir);
+      }
+      const disk: string = (f === img.file && ((f as any).lomaPath || desk.getPathForFile?.(f))) || "";
+      let r = await desk.saveToFolder(dir, f.name, disk || f);
+      if (!r?.ok && r?.error === "no-dir") {
+        localStorage.removeItem(key);
+        const nd = await desk.pickFolder(`Cartella di ${target} non trovata: sceglila di nuovo`, await desk.cloudDir(kind));
+        if (!nd) return;
+        localStorage.setItem(key, nd);
+        r = await desk.saveToFolder(nd, f.name, disk || f);
+      }
+      if (!r?.ok) { sonnerToast.error(`Salvataggio su ${target} non riuscito.`); return; }
+      sonnerToast.success(`${f.name} copiato in ${target}: verrà sincronizzato dall'app ${target}.`, {
+        action: { label: "Mostra", onClick: () => desk.showInFolder(r.path) },
+      });
       return;
     }
     if (!img || !imgEl.current) { notify(`Carica prima un'immagine da salvare su ${target}.`); return; }
@@ -874,13 +895,6 @@ export function LomaViewer() {
         type="file" multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }}
       />
       {topazOpen && <TopazSettings onClose={() => setTopazOpen(false)} />}
-      {cloudSetup && (
-        <CloudSetup
-          kind={cloudSetup}
-          onClose={() => setCloudSetup(null)}
-          onSaved={() => { const k = cloudSetup; setCloudSetup(null); uploadCloud(k === "drive" ? "Google Drive" : "OneDrive", ""); }}
-        />
-      )}
     </div>
   );
 }

@@ -60,11 +60,7 @@ function createWindow() {
     icon: path.join(__dirname, "..", "public", "icon-512.png"),
     webPreferences: { contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, "preload.cjs") },
   });
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    // Sign-in popups for Google Drive / OneDrive must stay inside the app so the login can return.
-    if (/^https:\/\/(accounts\.google\.com|login\.microsoftonline\.com|login\.live\.com)\//.test(url)) return { action: "allow" };
-    shell.openExternal(url); return { action: "deny" };
-  });
+  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
   mainWin = win;
   win.webContents.on("did-start-loading", () => { rendererReady = false; });
   win.on("closed", () => { if (mainWin === win) { mainWin = null; rendererReady = false; } });
@@ -119,3 +115,47 @@ ipcMain.handle("loma:openExternal", (_e, u) => (/^https?:\/\//.test(u) ? shell.o
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+
+// ---- Cloud via desktop sync apps (Google Drive for desktop, OneDrive): copy into the synced folder ----
+function detectCloudDir(kind) {
+  const home = os.homedir();
+  const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+  const cands = [];
+  if (kind === "onedrive") {
+    if (process.env.OneDrive) cands.push(process.env.OneDrive);
+    if (process.env.OneDriveConsumer) cands.push(process.env.OneDriveConsumer);
+    cands.push(path.join(home, "OneDrive"));
+  }
+  const cs = path.join(home, "Library", "CloudStorage");
+  if (isDir(cs)) {
+    for (const d of fs.readdirSync(cs)) {
+      if (kind === "onedrive" && /^OneDrive/i.test(d)) cands.push(path.join(cs, d));
+      if (kind === "drive" && /^GoogleDrive/i.test(d)) {
+        for (const sub of ["My Drive", "Il mio Drive", "Mein Ablage", "Mi unidad", "Mon Drive"]) cands.push(path.join(cs, d, sub));
+        cands.push(path.join(cs, d));
+      }
+    }
+  }
+  if (kind === "drive" && process.platform === "win32") {
+    for (const l of "GHIJKLMNOPQRSTUVWXYZDEF") for (const sub of ["My Drive", "Il mio Drive", "Mein Ablage", "Mi unidad", "Mon Drive"]) cands.push(`${l}:\\${sub}`);
+    cands.push(path.join(home, "Google Drive"));
+  }
+  return cands.find(isDir) || "";
+}
+ipcMain.handle("loma:cloudDir", (_e, kind) => detectCloudDir(kind));
+ipcMain.handle("loma:pickFolder", async (_e, title, start) => {
+  const r = await dialog.showOpenDialog(mainWin, { title, defaultPath: start || undefined, properties: ["openDirectory", "createDirectory"] });
+  return r.canceled ? "" : r.filePaths[0] || "";
+});
+ipcMain.handle("loma:saveToFolder", (_e, dir, name, src) => {
+  try {
+    if (!dir || !fs.existsSync(dir)) return { ok: false, error: "no-dir" };
+    const ext = path.extname(name), base = path.basename(name, ext);
+    let dest = path.join(dir, name), i = 1;
+    while (fs.existsSync(dest)) dest = path.join(dir, `${base} (${i++})${ext}`);
+    if (typeof src === "string") fs.copyFileSync(src, dest);
+    else fs.writeFileSync(dest, Buffer.from(src));
+    return { ok: true, path: dest };
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+});
+ipcMain.handle("loma:showInFolder", (_e, p) => shell.showItemInFolder(p));

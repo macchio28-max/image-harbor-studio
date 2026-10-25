@@ -19,4 +19,9 @@ contextBridge.exposeInMainWorld("lomaDesktop", {
   },
   openPath: (p) => ipcRenderer.invoke("loma:openPath", p),
   openExternal: (u) => ipcRenderer.invoke("loma:openExternal", u),
+  cloudDir: (kind) => ipcRenderer.invoke("loma:cloudDir", kind),
+  pickFolder: (title, start) => ipcRenderer.invoke("loma:pickFolder", title, start),
+  saveToFolder: async (dir, name, src) =>
+    ipcRenderer.invoke("loma:saveToFolder", dir, name, typeof src === "string" ? src : new Uint8Array(await src.arrayBuffer())),
+  showInFolder: (p) => ipcRenderer.invoke("loma:showInFolder", p),
 });
