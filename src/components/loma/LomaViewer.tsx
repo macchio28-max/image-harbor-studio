@@ -42,6 +42,7 @@ export function LomaViewer() {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [imgReady, setImgReady] = useState(0);
   const [topazOpen, setTopazOpen] = useState(false);
+  const [waAsk, setWaAsk] = useState(false);
   const [hist, setHist] = useState<Uint32Array[] | null>(null);
   const preview = useRef<HTMLCanvasElement>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -468,6 +469,35 @@ export function LomaViewer() {
     else sonnerToast.error(`Copia non riuscita: ${name} aperto, trascina la foto nella chat.`, { id });
   };
 
+  // WhatsApp: first click asks desktop app vs WhatsApp Web; then copy photo to clipboard and open it for pasting.
+  const whatsapp = async (choice?: "app" | "web") => {
+    if (isTouchDevice()) return share("WhatsApp", "whatsapp://");
+    if (!img) { notify("Apri prima un'immagine da inviare a WhatsApp."); return; }
+    const desk = (window as any).lomaDesktop;
+    let mode = choice ?? (localStorage.getItem("loma.wa.mode") as "app" | "web" | null);
+    if (!mode) { setWaAsk(true); return; }
+    let appPath = localStorage.getItem("loma.topaz.WhatsApp") || "";
+    if (mode === "app" && desk?.pickApp && !appPath) {
+      appPath = (await desk.pickApp("WhatsApp")) || "";
+      if (!appPath) { notify("Nessuna app WhatsApp selezionata."); return; }
+      localStorage.setItem("loma.topaz.WhatsApp", appPath);
+    }
+    localStorage.setItem("loma.wa.mode", mode);
+    const ok = await copyToClipboard();
+    let opened = false;
+    if (mode === "app") {
+      if (desk?.launchApp && appPath) {
+        const r = await desk.launchApp(appPath, []);
+        if (!r?.ok && r?.error === "not-found") { localStorage.removeItem("loma.topaz.WhatsApp"); notify("WhatsApp non trovato: premi di nuovo e selezionalo."); return; }
+        opened = !!r?.ok;
+      } else { window.location.href = "whatsapp://"; opened = true; }
+    }
+    if (!opened) { const u = "https://web.whatsapp.com/"; if (desk?.openExternal) desk.openExternal(u); else window.open(u, "_blank", "noopener"); mode = "web"; }
+    const paste = /Mac/.test(navigator.platform) ? "⌘V" : "Ctrl+V";
+    if (ok) sonnerToast.success(`Immagine copiata. In WhatsApp apri la chat e premi ${paste}.`, { duration: 8000 });
+    else sonnerToast.error("Copia non riuscita: trascina la foto nella chat di WhatsApp.");
+  };
+
   const share = async (target: string, fallback?: string) => {
     if (img && imgEl.current) {
       const b = await renderClean(imgEl.current, adjust, crop, "image/png");
@@ -701,9 +731,9 @@ export function LomaViewer() {
           <Tool icon={<B.OneDriveIcon />} label="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
           <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => uploadCloud("iCloud Drive", "https://www.icloud.com/iclouddrive/")} />
           <Tool icon={<B.MailIcon />} label="Mail" onClick={() => share("Mail", "mailto:?subject=Immagine%20da%20LoMa%20VIEWER")} />
-          <Tool icon={<B.WhatsAppIcon />} label="WhatsApp" onClick={() => share("WhatsApp", "whatsapp://")} />
+          <Tool icon={<B.WhatsAppIcon />} label="WhatsApp" onClick={() => whatsapp()} />
           <Tool icon={<B.AirDropIcon />} label="AirDrop" onClick={() => share("AirDrop")} />
-          <Tool icon={<B.LocalSendIcon />} label="LocalSend" onClick={() => share("LocalSend")} />
+          <Tool icon={<B.LocalSendIcon />} label="LocalSend" onClick={() => topaz("LocalSend")} />
         </Group>
         </div></div>
       </header>
@@ -906,6 +936,18 @@ export function LomaViewer() {
         type="file" multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }}
       />
       {topazOpen && <TopazSettings onClose={() => setTopazOpen(false)} />}
+      {waAsk && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 p-4" onClick={() => setWaAsk(false)}>
+          <div className="w-full max-w-sm rounded-lg border border-border bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-1 text-lg font-semibold">Come vuoi usare WhatsApp?</h2>
+            <p className="mb-4 text-sm text-muted-foreground">La scelta viene ricordata. La foto viene copiata negli appunti: ti basta incollarla nella chat.</p>
+            <div className="flex flex-col gap-2">
+              <button className="rounded bg-primary px-3 py-2 text-sm text-primary-foreground" onClick={() => { setWaAsk(false); whatsapp("app"); }}>App WhatsApp sul computer</button>
+              <button className="rounded bg-secondary px-3 py-2 text-sm hover:bg-accent" onClick={() => { setWaAsk(false); whatsapp("web"); }}>WhatsApp Web nel browser</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -971,7 +1013,7 @@ function isTouchDevice() {
 }
 
 function TopazSettings({ onClose }: { onClose: () => void }) {
-  const apps = ["Topaz Photo AI", "Topaz Gigapixel AI", "Adobe Photoshop", "Adobe Lightroom", "Adobe Lightroom Classic"];
+  const apps = ["Topaz Photo AI", "Topaz Gigapixel AI", "Adobe Photoshop", "Adobe Lightroom", "Adobe Lightroom Classic", "WhatsApp", "LocalSend"];
   const [vals, setVals] = useState(() => Object.fromEntries(apps.map((a) => [a, localStorage.getItem(`loma.topaz.${a}`) ?? ""])));
   const [mobile] = useState(isTouchDevice);
   const browse = async (a: string) => {
