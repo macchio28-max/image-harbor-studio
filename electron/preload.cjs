@@ -23,5 +23,6 @@ contextBridge.exposeInMainWorld("lomaDesktop", {
   pickFolder: (title, start) => ipcRenderer.invoke("loma:pickFolder", title, start),
   saveToFolder: async (dir, name, src) =>
     ipcRenderer.invoke("loma:saveToFolder", dir, name, typeof src === "string" ? src : new Uint8Array(await src.arrayBuffer())),
+  copyImage: async (blob) => ipcRenderer.invoke("loma:copyImage", new Uint8Array(await blob.arrayBuffer())),
   showInFolder: (p) => ipcRenderer.invoke("loma:showInFolder", p),
 });
