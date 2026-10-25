@@ -20,10 +20,12 @@ import { Filmstrip } from "./Filmstrip";
 import { ComparePane } from "./ComparePane";
 import { MailChoice, WEBMAIL_PRESETS } from "./MailChoice";
 import { ContactSheet } from "./ContactSheet";
+import { ProvenancePanel } from "./ProvenancePanel";
 import { type CullItem, type CullFilter, IMAGE_RE, readCull, applyFilter } from "./culling";
 import { developCanvas, autoMeasure } from "./develop";
 
 type Meta = Record<string, any>;
+const EMPTY_META = {};
 type Loaded = { file: File; url: string; w: number; h: number; meta: Meta };
 type Mode = "select" | "move";
 
@@ -972,6 +974,7 @@ export function LomaViewer() {
               )}
             </div>
           </Section>
+          <ProvenancePanel file={img?.file ?? null} meta={img?.meta ?? EMPTY_META} />
           <Section icon={<FileText className="h-5 w-5" />} title="Dettagli file">
             <Rows rows={[
               ["Nome file", img?.file.name],
