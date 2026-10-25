@@ -433,7 +433,27 @@ export function LomaViewer() {
         return;
       }
     }
-    const path = localStorage.getItem(`loma.topaz.${app}`) || "";
+    let path = localStorage.getItem(`loma.topaz.${app}`) || "";
+    const desk = (window as any).lomaDesktop;
+    if (desk?.launchWithData) {
+      // Desktop (Electron): pass the edited, metadata-free export straight to the program.
+      if (!path && desk.pickApp) {
+        path = (await desk.pickApp(app)) || "";
+        if (path) localStorage.setItem(`loma.topaz.${app}`, path);
+      }
+      if (!path) { notify(`Seleziona il programma ${app} per aprire la foto.`); return; }
+      const b = await renderClean(imgEl.current!, adjust, crop, "image/png");
+      let r = await desk.launchWithData(path, `${baseName(img!.file.name)}_for_${app.replace(/\s/g, "")}.png`, b);
+      if (!r?.ok && r?.error === "not-found" && desk.pickApp) {
+        notify(`${app} non trovato: seleziona di nuovo il programma.`);
+        const np = await desk.pickApp(app);
+        if (!np) return;
+        localStorage.setItem(`loma.topaz.${app}`, np);
+        r = await desk.launchWithData(np, `${baseName(img!.file.name)}_for_${app.replace(/\s/g, "")}.png`, b);
+      }
+      notify(r?.ok ? `Foto aperta in ${app}.` : `Impossibile avviare ${app}.`);
+      return;
+    }
     await exportClean("image/png", `_for_${app.replace(/\s/g, "")}`);
     notify(path ? `Esportato. Aprilo con ${app} (${path}).` : `Esportato per ${app}. Imposta il percorso in "Percorsi".`);
   };
