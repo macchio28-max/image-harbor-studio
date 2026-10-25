@@ -1,7 +1,7 @@
 // Provenance & AI-trace analysis from file bytes + parsed metadata (exifr).
 export type Level = "none" | "partial" | "ai";
 export type Mode = "generated" | "edited" | "unknown";
-export type Finding = { engine: string; signature: string; details: [string, string][]; candidates?: string[]; mode?: Mode };
+export type Finding = { engine: string; signature: string; details: [string, string][]; candidates?: string[] | undefined; mode?: Mode | undefined };
 export type Provenance = { level: Level; findings: Finding[] };
 
 const GENERATORS: [RegExp, string][] = [
