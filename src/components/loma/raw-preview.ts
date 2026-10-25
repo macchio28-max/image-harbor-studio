@@ -40,7 +40,7 @@ function parseTiff(buf: DataView, base: number, fileSize: number): Cand[] {
     if (jo && jl) out.push({ off: base + jo, len: jl });
     const comp = tags[0x103]?.[0];
     const so = tags[0x111], sc = tags[0x117];
-    if (so?.length === 1 && sc?.length === 1 && (comp === 6 || comp === 7 || comp === undefined)) out.push({ off: base + so[0], len: sc[0] });
+    if (so?.length === 1 && sc?.length === 1 && (comp === 6 || comp === 7 || comp === undefined)) out.push({ off: base + so[0]!, len: sc[0]! });
     for (const s of tags[0x14a] ?? []) queue.push(s);
     if (tags[0x8769]?.[0]) queue.push(tags[0x8769][0]);
     const next = u32(ifd + 2 + n * 12);
@@ -61,7 +61,7 @@ function scan(bytes: Uint8Array): Cand[] {
   }
   const out: Cand[] = [];
   for (let k = 0; k < soi.length; k++) {
-    const start = soi[k], limit = k + 1 < soi.length ? soi[k + 1] : bytes.length;
+    const start = soi[k]!, limit = k + 1 < soi.length ? soi[k + 1]! : bytes.length;
     let end = -1;
     for (let j = limit - 2; j > start; j--) if (bytes[j] === 0xff && bytes[j + 1] === 0xd9) { end = j + 2; break; }
     if (end > 0 && end - start > 4096) out.push({ off: start, len: end - start });
