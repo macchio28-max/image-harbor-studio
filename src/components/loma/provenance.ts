@@ -1,6 +1,7 @@
 // Provenance & AI-trace analysis from file bytes + parsed metadata (exifr).
 export type Level = "none" | "partial" | "ai";
-export type Finding = { engine: string; signature: string; details: [string, string][] };
+export type Mode = "generated" | "edited" | "unknown";
+export type Finding = { engine: string; signature: string; details: [string, string][]; candidates?: string[]; mode?: Mode };
 export type Provenance = { level: Level; findings: Finding[] };
 
 const GENERATORS: [RegExp, string][] = [
@@ -20,11 +21,37 @@ const GENERATORS: [RegExp, string][] = [
   [/ideogram/i, "Ideogram"],
   [/runway/i, "Runway"],
   [/meta\s*ai|imagine\s*with\s*meta/i, "Meta AI"],
+  [/kling/i, "Kling AI"],
+  [/topaz\s*(photo\s*ai|gigapixel)|gigapixel/i, "Topaz Labs (AI)"],
+  [/galaxy\s*ai|samsung/i, "Samsung Galaxy AI"],
 ];
-const EDITORS = /photoshop|lightroom|capture one|gimp|affinity|luminar|topaz|pixelmator|snapseed|darktable/i;
+const EDITORS = /photoshop|lightroom|capture one|gimp|affinity|luminar|pixelmator|snapseed|darktable/i;
 const AUTH = /truepic|leica|nikon|sony|canon/i;
 
 const clip = (s: string, n = 600) => (s.length > n ? s.slice(0, n) + "…" : s);
+
+// Tools known to write each kind of trace (indicative list).
+export const CANDIDATES = {
+  c2pa: ["Adobe Firefly", "Photoshop (Riempimento generativo / Espandi)", "Lightroom (Rimozione generativa)", "OpenAI ChatGPT / DALL·E / Sora", "Microsoft Designer / Bing Image Creator", "Google Gemini / Imagen / Pixel", "Meta AI", "Samsung Galaxy AI", "Kling AI", "Leica / Nikon / Sony (autenticità fotocamera)", "Truepic"],
+  iptc: ["Midjourney", "Meta AI", "Google Gemini / Imagen", "Adobe Firefly / Photoshop", "OpenAI ChatGPT", "Microsoft Designer", "Kling AI", "Shutterstock / Getty AI"],
+  a1111: ["Stable Diffusion AUTOMATIC1111", "Forge", "Fooocus", "SD.Next"],
+  comfy: ["ComfyUI (Stable Diffusion, SDXL, Flux)"],
+  topaz: ["Topaz Photo AI", "Topaz Gigapixel AI"],
+};
+
+// Read CBOR text string right after a given key inside raw latin1 text.
+function cborAfter(raw: string, key: string, from = 0): string | null {
+  const i = raw.indexOf(key, from);
+  if (i < 0) return null;
+  let p = i + key.length;
+  const h = raw.charCodeAt(p);
+  let len = -1;
+  if (h >= 0x60 && h <= 0x77) { len = h - 0x60; p += 1; }
+  else if (h === 0x78) { len = raw.charCodeAt(p + 1); p += 2; }
+  if (len <= 0) return null;
+  const v = raw.slice(p, p + len);
+  try { return new TextDecoder().decode(Uint8Array.from(v, (c) => c.charCodeAt(0))); } catch { return v; }
+}
 
 export function parseA1111(text: string): [string, string][] {
   const out: [string, string][] = [];
@@ -84,10 +111,10 @@ export function analyze(bytes: Uint8Array, metaIn: Record<string, any>): Provena
   for (const c of chunks) {
     const k = c.key.toLowerCase();
     if (k === "parameters") {
-      findings.push({ engine: /comfy/i.test(c.text) ? "Stable Diffusion / ComfyUI" : "Stable Diffusion (A1111 / Forge)", signature: "Chunk PNG parameters", details: parseA1111(c.text) });
+      findings.push({ engine: /comfy/i.test(c.text) ? "Stable Diffusion / ComfyUI" : "Stable Diffusion (A1111 / Forge)", signature: "Chunk PNG parameters", details: parseA1111(c.text), candidates: CANDIDATES.a1111, mode: /img2img|Denoising strength/i.test(c.text) ? "edited" : "generated" });
       bump("ai");
     } else if (k === "prompt" || k === "workflow") {
-      findings.push({ engine: "Stable Diffusion / ComfyUI", signature: `Chunk PNG ${c.key}`, details: [["Contenuto", clip(c.text, 400)]] });
+      findings.push({ engine: "Stable Diffusion / ComfyUI", signature: `Chunk PNG ${c.key}`, details: [["Contenuto", clip(c.text, 400)]], candidates: CANDIDATES.comfy, mode: /LoadImage|VAEEncode|Inpaint/i.test(c.text) ? "edited" : "generated" });
       bump("ai");
     } else if (["generation_data", "invokeai_metadata", "sd-metadata", "dream", "fooocus_scheme"].includes(k)) {
       findings.push({ engine: GENERATORS.find(([r]) => r.test(c.text + k))?.[1] ?? "Generatore AI", signature: `Chunk PNG ${c.key}`, details: [["Contenuto", clip(c.text, 400)]] });
@@ -101,16 +128,42 @@ export function analyze(bytes: Uint8Array, metaIn: Record<string, any>): Provena
   // C2PA / JUMBF
   const hasC2pa = pngC2pa || /c2pa|jumb[\s\S]{0,40}jumd/i.test(raw);
   if (hasC2pa) {
-    const gen = raw.match(/claim_generator[^A-Za-z0-9]{0,8}([\x20-\x7e]{3,80})/);
+    let gen: string | null = null;
+    // C2PA 1.x: "claim_generator" -> text; 2.x: claim_generator_info -> {name, version}
+    let q = 0;
+    while ((q = raw.indexOf("claim_generator", q)) >= 0) {
+      if (raw.startsWith("claim_generator_info", q)) {
+        const name = cborAfter(raw, "name", q), ver = cborAfter(raw, "version", q);
+        if (name && !gen) gen = ver ? `${name} ${ver}` : name;
+      } else {
+        const v = cborAfter(raw, "claim_generator", q);
+        if (v && v !== "info" && !gen) gen = v;
+      }
+      q += 15;
+    }
+    const agents = new Set<string>();
+    q = 0;
+    while ((q = raw.indexOf("softwareAgent", q)) >= 0) {
+      const v = cborAfter(raw, "softwareAgent", q) ?? cborAfter(raw, "name", q);
+      if (v && v.length < 80) agents.add(v);
+      q += 13;
+    }
+    const actions = [...new Set(raw.match(/c2pa\.(created|edited|placed|opened|converted|filtered|color_adjustments|resized|cropped)/g) ?? [])];
     const signer = raw.match(/(?:CN=|issuer[^A-Za-z]{0,6})([\x20-\x7e]{3,60})/);
-    const aiAssert = /trainedAlgorithmicMedia|c2pa\.ai|ai_generat|generative/i.test(raw);
-    const blob = (gen?.[1] ?? "") + " " + raw.slice(0, 0);
-    const eng = GENERATORS.find(([r]) => r.test(blob) || r.test(signer?.[1] ?? ""))?.[1];
+    const composite = /compositeWithTrainedAlgorithmicMedia|compositeSynthetic/.test(raw);
+    const trained = /trainedAlgorithmicMedia/.test(raw);
+    const aiAssert = trained || /c2pa\.ai|ai_generat|generative/i.test(raw);
+    const blob = [gen ?? "", ...agents, signer?.[1] ?? ""].join(" ");
+    const eng = GENERATORS.find(([r]) => r.test(blob))?.[1];
+    const mode: Mode = composite || (aiAssert && actions.includes("c2pa.edited") && !actions.includes("c2pa.created")) || /generative\s*(fill|expand|remove)/i.test(raw)
+      ? "edited" : trained && actions.includes("c2pa.created") || (trained && !composite) ? "generated" : "unknown";
     const details: [string, string][] = [];
-    if (gen) details.push(["Claim generator", gen[1]!.trim()]);
+    if (gen) details.push(["Claim generator", gen.trim()]);
+    if (agents.size) details.push(["Software / agente", [...agents].join(", ")]);
+    if (actions.length) details.push(["Azioni registrate", actions.map((a) => a.slice(5)).join(", ")]);
     if (signer) details.push(["Firmatario", signer[1]!.trim()]);
     details.push(["Asserzione AI", aiAssert ? "Presente" : "Non trovata"]);
-    findings.push({ engine: eng ?? (AUTH.test(blob + (signer?.[1] ?? "")) ? "Autenticità fotocamera (C2PA)" : "C2PA Content Credentials"), signature: "C2PA Manifest (JUMBF)", details });
+    findings.push({ engine: eng ?? (AUTH.test(blob) ? "Autenticità fotocamera (C2PA)" : "C2PA Content Credentials"), signature: "C2PA Manifest (JUMBF)", details, candidates: eng ? undefined : CANDIDATES.c2pa, mode: aiAssert ? mode : undefined });
     bump(aiAssert || eng ? "ai" : "partial");
   }
 
@@ -118,7 +171,7 @@ export function analyze(bytes: Uint8Array, metaIn: Record<string, any>): Provena
   const dst = raw.match(/DigitalSourceType[^a-zA-Z]{0,4}[^"<>]*?(trainedAlgorithmicMedia|compositeWithTrainedAlgorithmicMedia|algorithmicMedia|compositeSynthetic)/);
   if (dst) {
     const composite = dst[1]!.startsWith("composite");
-    findings.push({ engine: "Contenuto AI dichiarato (IPTC)", signature: "Tag XMP Generative", details: [["DigitalSourceType", dst[1]!], ["Significato", composite ? "Foto modificata con AI" : "Generata da AI"]] });
+    findings.push({ engine: "Contenuto AI dichiarato (IPTC)", signature: "Tag XMP Generative", details: [["DigitalSourceType", dst[1]!]], candidates: CANDIDATES.iptc, mode: composite ? "edited" : "generated" });
     bump("ai");
   }
 
@@ -138,7 +191,7 @@ export function analyze(bytes: Uint8Array, metaIn: Record<string, any>): Provena
     }
     const g = GENERATORS.find(([r]) => r.test(v));
     if (g && !findings.some((f) => f.engine === g[1])) {
-      findings.push({ engine: g[1], signature: `Tag ${k}`, details: [[k, clip(v, 300)]] });
+      findings.push({ engine: g[1], signature: `Tag ${k}`, details: [[k, clip(v, 300)]], ...(g[1] === "Topaz Labs (AI)" ? { candidates: CANDIDATES.topaz, mode: "edited" as Mode } : {}) });
       bump("ai");
     } else if (!editor && EDITORS.test(v) && (k === "Software" || k === "Creator Tool" || k === "Processing Software")) editor = v;
   }
