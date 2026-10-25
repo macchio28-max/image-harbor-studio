@@ -110,6 +110,7 @@ ipcMain.handle("loma:clearCache", async () => {
   return { ok: true, freed };
 });
 ipcMain.handle("loma:openPath", (_e, p) => shell.openPath(p));
+ipcMain.handle("loma:openExternal", (_e, u) => (/^https?:\/\//.test(u) ? shell.openExternal(u) : null));
 
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
