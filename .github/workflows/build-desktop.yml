@@ -23,11 +23,19 @@ jobs:
           node-version: 22
       - name: Install
         run: npm install --no-audit --no-fund
-      - name: Build installers
+      - name: Build web app
+        run: npm run build
+      - name: Build Windows installer
+        if: matrix.os == 'windows-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run electron:build:win -- --publish never
+      - name: Build macOS installer
+        if: matrix.os == 'macos-latest'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm run electron:build -- --publish never
+        run: npm run electron:build:mac -- --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: loma-viewer-${{ matrix.os }}
