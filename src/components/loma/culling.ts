@@ -41,14 +41,15 @@ export async function readCull(file: File): Promise<Omit<CullItem, "id" | "file"
     meta = (await exifr.parse(file, { tiff: true, exif: true, iptc: true, xmp: true, makerNote: false, mergeOutput: true })) ?? {};
   } catch { /* none */ }
   let thumb: string | null = null;
-  if (/\.(cr2|cr3|nef|nrw|arw|srf|sr2|dng|orf|rw2|raf|pef|srw|3fr|iiq|erf|kdc|tiff?)$/i.test(file.name)) {
-    const p = await extractRawPreview(file);
-    if (p) thumb = URL.createObjectURL(p);
-  }
-  if (!thumb) try {
+  // Grid/filmstrip: small embedded thumbnail first (fast); full-size preview only as fallback.
+  try {
     const th = await exifr.thumbnail(file);
     if (th) thumb = URL.createObjectURL(new Blob([th as BlobPart], { type: "image/jpeg" }));
   } catch { /* none */ }
+  if (!thumb && /\.(cr2|cr3|nef|nrw|arw|srf|sr2|dng|orf|rw2|raf|pef|srw|3fr|iiq|erf|kdc|tiff?)$/i.test(file.name)) {
+    const p = await extractRawPreview(file);
+    if (p) thumb = URL.createObjectURL(p);
+  }
   if (!thumb && /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(file.name)) thumb = URL.createObjectURL(file);
   return { thumb, ...cullFromMeta(meta) };
 }

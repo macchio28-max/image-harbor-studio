@@ -76,7 +76,15 @@ export function LomaViewer() {
       cv.getContext("2d")!.drawImage(canvas, 0, 0);
       setHist(hh);
     });
-    return () => { cancel = true; cancelAnimationFrame(id); };
+    // After edits settle, re-render at full resolution so 100%/200% zoom stays sharp.
+    const t = isNeutral(adjust) || Math.max(img.w, img.h) <= 1600 ? 0 : window.setTimeout(() => {
+      const src = imgEl.current, cv = preview.current;
+      if (cancel || !src || !cv || !src.naturalWidth) return;
+      const { canvas } = developCanvas(src, img.w, img.h, adjust, 1);
+      cv.width = img.w; cv.height = img.h;
+      cv.getContext("2d")!.drawImage(canvas, 0, 0);
+    }, 450);
+    return () => { cancel = true; cancelAnimationFrame(id); if (t) clearTimeout(t); };
   }, [img, adjust, imgReady]);
 
   const autoWb = () => {
@@ -750,8 +758,8 @@ export function LomaViewer() {
               <div className="absolute inset-0" >
                 <div className="absolute left-0 top-0" style={{ width: img.w, height: img.h, transformOrigin: "0 0", transform }}>
                   <div style={rotStyle}>
-                    <img ref={imgEl} src={img.url} alt={img.file.name} draggable={false} onLoad={() => setImgReady((n) => n + 1)} className="hidden" />
-                    <canvas ref={preview} aria-label={img.file.name} style={{ width: img.w, height: img.h, imageRendering: scale >= 2 ? "pixelated" : "auto" }} />
+                    <img ref={imgEl} src={img.url} alt={img.file.name} draggable={false} onLoad={() => setImgReady((n) => n + 1)} className={isNeutral(adjust) ? "block max-w-none" : "hidden"} style={{ width: img.w, height: img.h, imageRendering: scale >= 2 ? "pixelated" : "auto" }} />
+                    <canvas ref={preview} aria-label={img.file.name} style={{ display: isNeutral(adjust) ? "none" : "block", width: img.w, height: img.h, imageRendering: scale >= 2 ? "pixelated" : "auto" }} />
                   </div>
                 </div>
               </div>
