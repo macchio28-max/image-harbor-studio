@@ -50,12 +50,23 @@ export function ProvenancePanel({ file, meta }: { file: File | null; meta: Recor
                   <span className="text-muted-foreground">Motore</span><span className="font-medium">{f.engine}</span>
                   <span className="text-muted-foreground">Firma</span><span>{f.signature}</span>
                 </div>
+                {f.mode && (
+                  <div className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-xs font-medium ${f.mode === "generated" ? "bg-destructive/20 text-destructive" : f.mode === "edited" ? "bg-yellow-500/20 text-yellow-400" : "bg-muted text-muted-foreground"}`}>
+                    {f.mode === "generated" ? "Generata da zero con AI" : f.mode === "edited" ? "Foto modificata / ritocco generativo AI" : "Tipo di intervento AI non determinabile"}
+                  </div>
+                )}
                 {f.details.length > 0 && (
                   <dl className="mt-1.5 space-y-1 border-t border-border pt-1.5 text-xs">
                     {f.details.map(([k, v]) => (
                       <div key={k}><dt className="text-muted-foreground">{k}</dt><dd className="select-text whitespace-pre-wrap break-words">{v}</dd></div>
                     ))}
                   </dl>
+                )}
+                {f.candidates && (
+                  <div className="mt-1.5 border-t border-border pt-1.5 text-xs">
+                    <div className="text-muted-foreground">Strumenti che usano questa traccia (indicativo)</div>
+                    <div className="mt-1 flex flex-wrap gap-1">{f.candidates.map((c) => <span key={c} className="rounded border border-border bg-background/60 px-1.5 py-0.5">{c}</span>)}</div>
+                  </div>
                 )}
               </div>
             ))}
