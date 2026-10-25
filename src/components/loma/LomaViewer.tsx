@@ -11,6 +11,8 @@ import {
   nativeScreenSize,
 } from "./viewer-utils";
 
+import * as B from "./brand-icons";
+
 type Meta = Record<string, any>;
 type Loaded = { file: File; url: string; w: number; h: number; meta: Meta };
 type Mode = "select" | "move";
@@ -257,6 +259,32 @@ export function LomaViewer() {
     notify(`${target} richiede la condivisione di sistema (disponibile su tablet e Mac/Safari).`);
   };
 
+  // Cloud = save the shown (edited, metadata-free) photo INTO the user's cloud space.
+  const uploadCloud = async (target: string, web: string) => {
+    if (!img || !imgEl.current) { notify(`Carica prima un'immagine da salvare su ${target}.`); return; }
+    notify(`Preparazione caricamento su ${target}...`);
+    const b = await renderClean(imgEl.current, adjust, crop, "image/png");
+    const name = `${baseName(img.file.name)}.png`;
+    const picker = (window as any).showSaveFilePicker;
+    if (picker) {
+      // Desktop with the cloud sync app installed: the user picks the cloud folder, the file is written there.
+      try {
+        const h = await picker({ suggestedName: name, startIn: "documents", types: [{ description: "PNG", accept: { "image/png": [".png"] } }] });
+        notify(`Caricamento su ${target} in corso...`);
+        const w = await h.createWritable(); await w.write(b); await w.close();
+        notify(`Salvato su ${target}: ${h.name}`);
+        return;
+      } catch (e: any) { if (e?.name === "AbortError") { notify("Caricamento annullato."); return; } }
+    }
+    const f = new File([b], name, { type: "image/png" });
+    if (navigator.canShare?.({ files: [f] })) {
+      try { await navigator.share({ files: [f], title: name }); notify(`Inviato a ${target}.`); return; } catch { notify("Caricamento annullato."); return; }
+    }
+    download(b, name);
+    window.open(web, "_blank", "noopener");
+    notify(`Accedi a ${target}, scegli la cartella e trascina ${name} per salvarla.`);
+  };
+
   const topaz = async (app: string) => {
     if (!need()) return;
     const path = localStorage.getItem(`loma.topaz.${app}`) || "";
@@ -316,7 +344,11 @@ export function LomaViewer() {
           <Tool icon={<B.MetaAIIcon />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/")} />
           <Tool icon={<B.GeminiIcon />} label="Gemini" onClick={() => openAI("Gemini", "https://gemini.google.com/")} />
           <Tool icon={<B.FlowIcon />} label="Flow" onClick={() => openAI("Flow", "https://labs.google/fx/tools/flow")} />
-NEXT_TOPAZ
+          <span className="mx-1 w-px shrink-0 self-stretch bg-border" />
+          <Tool icon={<B.TopazPhotoIcon />} label="Topaz Photo AI" onClick={() => topaz("Topaz Photo AI")} />
+          <Tool icon={<B.TopazGigapixelIcon />} label="Topaz Gigapixel AI" onClick={() => topaz("Topaz Gigapixel AI")} />
+          <Tool icon={<Settings />} label="Percorsi" onClick={() => setTopazOpen(true)} />
+          <span className="mx-1 w-px shrink-0 self-stretch bg-border" />
           <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
           <Tool icon={<B.OneDriveIcon />} label="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
           <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => uploadCloud("iCloud Drive", "https://www.icloud.com/iclouddrive/")} />
