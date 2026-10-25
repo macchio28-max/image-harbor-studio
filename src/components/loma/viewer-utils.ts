@@ -1,3 +1,4 @@
+import { stripBlob } from "./sanitize";
 import { type Adjust, defaultAdjust, developCanvas } from "./develop";
 export { type Adjust, defaultAdjust };
 
@@ -24,7 +25,9 @@ export async function renderClean(
   ctx.rotate(ang);
   if (adjust.flipH) ctx.scale(-1, 1);
   ctx.drawImage(dev, -sw / 2, -sh / 2);
-  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("export"))), type, 0.95));
+  const raw = await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("export"))), type, 0.97));
+  // Canvas output carries no source metadata; scrub any encoder-added chunks/segments anyway.
+  return stripBlob(raw);
 }
 
 export function download(blob: Blob, name: string) {
