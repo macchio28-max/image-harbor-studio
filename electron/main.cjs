@@ -1,7 +1,7 @@
 // LoMa VIEWER desktop shell (Electron).
 // Loads the app from LOMA_URL (e.g. http://localhost:8080 during development) or the published
 // URL (cached offline by its service worker) and exposes native IPC for dialogs and external programs.
-const { app, BrowserWindow, ipcMain, dialog, shell, session, clipboard, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, session, clipboard, nativeImage, ShareMenu } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const os = require("os");
@@ -165,4 +165,20 @@ ipcMain.handle("loma:copyImage", (_e, bytes) => {
   if (im.isEmpty()) return false;
   clipboard.writeImage(im);
   return true;
+});
+
+// macOS native share menu (AirDrop, Messaggi, Mail...). Accepts a disk path or the image bytes.
+ipcMain.handle("loma:shareFile", (_e, src, name) => {
+  if (process.platform !== "darwin" || !ShareMenu) return { ok: false, error: "unsupported" };
+  try {
+    let p = typeof src === "string" ? src : "";
+    if (!p) {
+      const dir = path.join(os.tmpdir(), "loma-viewer");
+      fs.mkdirSync(dir, { recursive: true });
+      p = path.join(dir, path.basename(name || "foto.png"));
+      fs.writeFileSync(p, Buffer.from(src));
+    }
+    new ShareMenu({ filePaths: [p] }).popup({ window: mainWin || undefined });
+    return { ok: true };
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
 });

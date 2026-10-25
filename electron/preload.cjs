@@ -24,5 +24,7 @@ contextBridge.exposeInMainWorld("lomaDesktop", {
   saveToFolder: async (dir, name, src) =>
     ipcRenderer.invoke("loma:saveToFolder", dir, name, typeof src === "string" ? src : new Uint8Array(await src.arrayBuffer())),
   copyImage: async (blob) => ipcRenderer.invoke("loma:copyImage", new Uint8Array(await blob.arrayBuffer())),
+  shareFile: async (src, name) =>
+    ipcRenderer.invoke("loma:shareFile", typeof src === "string" ? src : new Uint8Array(await src.arrayBuffer()), name),
   showInFolder: (p) => ipcRenderer.invoke("loma:showInFolder", p),
 });

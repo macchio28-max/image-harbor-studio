@@ -17,6 +17,7 @@ import * as B from "./brand-icons";
 import { DevelopPanel } from "./DevelopPanel";
 import { Filmstrip } from "./Filmstrip";
 import { ComparePane } from "./ComparePane";
+import { MailChoice, WEBMAIL_PRESETS } from "./MailChoice";
 import { ContactSheet } from "./ContactSheet";
 import { type CullItem, type CullFilter, IMAGE_RE, readCull, applyFilter } from "./culling";
 import { developCanvas, autoMeasure } from "./develop";
@@ -385,9 +386,9 @@ export function LomaViewer() {
     notify(f === img!.file ? `Salvato file originale: ${f.name}` : "Immagine modificata salvata.");
   };
   const deepClean = async () => {
-    const isJpg = img && /jpe?g/i.test(img.file.type);
-    if (await exportClean(isJpg ? "image/jpeg" : "image/png", "_clean"))
-      notify("Deep Clean: EXIF, IPTC, XMP, C2PA e parametri AI rimossi (pixel riscritti).");
+    // Lossless PNG re-encode from a fresh canvas + byte-level chunk scrub (see sanitize.ts).
+    if (await exportClean("image/png", "_clean"))
+      notify("Pulizia completa: EXIF, XMP, IPTC, ICC, C2PA/JUMBF e testi AI rimossi; pixel riscritti senza perdita (PNG).");
   };
 
   const screenshot = async () => {
@@ -1053,7 +1054,10 @@ function isTouchDevice() {
 }
 
 function TopazSettings({ onClose }: { onClose: () => void }) {
-  const apps = ["Topaz Photo AI", "Topaz Gigapixel AI", "Adobe Photoshop", "Adobe Lightroom", "Adobe Lightroom Classic", "WhatsApp", "LocalSend"];
+  const apps = ["Topaz Photo AI", "Topaz Gigapixel AI", "Adobe Photoshop", "Adobe Lightroom", "Adobe Lightroom Classic", "WhatsApp", "LocalSend", "Mail"];
+  const [mailMode, setMailMode] = useState(() => localStorage.getItem("loma.mail.mode") || "");
+  const [mailUrl, setMailUrl] = useState(() => localStorage.getItem("loma.mail.url") || "");
+  const [waMode, setWaMode] = useState(() => localStorage.getItem("loma.wa.mode") || "");
   const [vals, setVals] = useState(() => Object.fromEntries(apps.map((a) => [a, localStorage.getItem(`loma.topaz.${a}`) ?? ""])));
   const [mobile] = useState(isTouchDevice);
   const browse = async (a: string) => {
@@ -1102,10 +1106,35 @@ function TopazSettings({ onClose }: { onClose: () => void }) {
                 </div>
               </label>
             ))}
+            <div className="mb-3 grid grid-cols-2 gap-3 text-sm">
+              <label>Email
+                <select value={mailMode} onChange={(e) => setMailMode(e.target.value)} className="mt-1 w-full rounded-md border border-input bg-background px-2 py-2">
+                  <option value="">Chiedi al primo clic</option><option value="app">App di posta</option><option value="web">Webmail</option>
+                </select>
+              </label>
+              <label>WhatsApp
+                <select value={waMode} onChange={(e) => setWaMode(e.target.value)} className="mt-1 w-full rounded-md border border-input bg-background px-2 py-2">
+                  <option value="">Chiedi al primo clic</option><option value="app">App desktop</option><option value="web">WhatsApp Web</option>
+                </select>
+              </label>
+            </div>
+            {mailMode === "web" && (
+              <label className="mb-3 block text-sm">Indirizzo webmail
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {WEBMAIL_PRESETS.map((p) => <button type="button" key={p.name} onClick={() => setMailUrl(p.url)} className="rounded bg-secondary px-2 py-1 text-xs hover:bg-accent">{p.name}</button>)}
+                </div>
+                <input value={mailUrl} onChange={(e) => setMailUrl(e.target.value)} placeholder="https://mail.google.com/..." className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2" />
+              </label>
+            )}
             <div className="flex justify-end gap-2">
               <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm">Annulla</button>
               <button
-                onClick={() => { apps.forEach((a) => localStorage.setItem(`loma.topaz.${a}`, vals[a] ?? "")); onClose(); }}
+                onClick={() => {
+                  apps.forEach((a) => localStorage.setItem(`loma.topaz.${a}`, vals[a] ?? ""));
+                  const set = (k: string, v: string) => (v ? localStorage.setItem(k, v) : localStorage.removeItem(k));
+                  set("loma.mail.mode", mailMode); set("loma.mail.url", mailUrl); set("loma.wa.mode", waMode);
+                  onClose();
+                }}
                 className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
               >
                 Salva
