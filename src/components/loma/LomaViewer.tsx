@@ -265,9 +265,11 @@ export function LomaViewer() {
     const merge = (chunk: CullItem[], res: Partial<CullItem>[]) =>
       setSession((s) => s.map((x) => { const k = chunk.findIndex((c) => c.id === x.id); return k < 0 ? x : { ...x, ...res[k] }; }));
     // 1) stars / lock / flag first (only a few KB per file), so filters work right away
-    const light = typeof window !== "undefined" && (window.matchMedia("(pointer: coarse)").matches || /Android|iPad|iPhone/i.test(navigator.userAgent)) && !(window as any).lomaDesktop;
-    if (light) {
-      // Tablet/phone: one pass in file order (tags + thumbnail together), 4 at a time → first photos appear in seconds.
+    // Fast path on every device: one light pass per file (tags + embedded thumbnail), full metadata only when a photo is opened.
+    const light = true;
+    const isTouch = typeof window !== "undefined" && (window.matchMedia("(pointer: coarse)").matches || /Android|iPad|iPhone/i.test(navigator.userAgent)) && !(window as any).lomaDesktop;
+    const WORKERS = isTouch ? 4 : 8;
+    {
       let next = 0;
       const buf: { c: CullItem; r: Partial<CullItem> }[] = [];
       let timer: any = null;
@@ -283,17 +285,8 @@ export function LomaViewer() {
           if (!timer) timer = setTimeout(flush, 150);
         }
       };
-      await Promise.all([worker(), worker(), worker(), worker()]);
+      await Promise.all(Array.from({ length: WORKERS }, worker));
       flush();
-      return;
-    }
-    for (let i = 0; i < base.length; i += 12) {
-      const chunk = base.slice(i, i + 12);
-      merge(chunk, await Promise.all(chunk.map((c) => readCullTags(c.file).catch(() => ({})))));
-    }
-    for (let i = 0; i < base.length; i += 6) {
-      const chunk = base.slice(i, i + 6);
-      merge(chunk, await Promise.all(chunk.map((c) => readCull(c.file).catch(() => ({}) as Partial<CullItem>))));
     }
   };
 
