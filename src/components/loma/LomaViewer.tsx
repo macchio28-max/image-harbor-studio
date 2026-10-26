@@ -774,8 +774,16 @@ export function LomaViewer() {
         <Group>
           <Tool icon={<HardDrive className="text-primary" />} label="Importa" tip="Importa scheda / cartella" onClick={() => folderInput.current?.click()} />
           <Tool icon={<Images />} label="Apri" tip="Apri più file" onClick={() => multiInput.current?.click()} />
-          <Tool icon={<GalleryHorizontal />} label="Strip" tip="Filmstrip" active={stripOpen && session.length > 0} onClick={() => setStripOpen((o) => !o)} />
-          <Tool icon={view === "grid" ? <Square /> : <LayoutGrid />} label={view === "grid" ? "Singola" : "Griglia"} active={view === "grid"} onClick={() => session.length ? (view === "grid" ? openLoupe() : setView("grid")) : notify("Importa prima più foto.")} />
+          <Tool icon={<GalleryHorizontal />} label="Strip" tip="Filmstrip" active={stripOpen && session.length > 0 && !(mob && view === "grid")} onClick={() => {
+            if (mob) { const on = !(stripOpen && view !== "grid"); setStripOpen(on); if (on && view === "grid") openLoupe(); return; }
+            setStripOpen((o) => !o);
+          }} />
+          <Tool icon={view === "grid" ? <Square /> : <LayoutGrid />} label={view === "grid" ? "Singola" : "Griglia"} active={view === "grid"} onClick={() => {
+            if (!session.length) return notify("Importa prima più foto.");
+            if (view === "grid") return openLoupe();
+            if (mob) setStripOpen(false);
+            setView("grid");
+          }} />
           <Tool icon={<Save className="text-primary" />} label="Salva" onClick={save} />
           <Tool icon={<MousePointer2 />} label="Area" tip="Seleziona area" active={mode === "select"} onClick={() => setMode("select")} />
           <Tool icon={<Hand />} label="Sposta" active={mode === "move"} onClick={() => setMode("move")} />
