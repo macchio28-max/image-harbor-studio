@@ -155,14 +155,24 @@ export function LomaViewer() {
     let url = URL.createObjectURL(file);
     const exifr = (await import("exifr")).default;
     let meta: Meta = {};
-    try {
-      meta = (await exifr.parse(file, { tiff: true, exif: true, gps: true, icc: true, iptc: true, xmp: true })) ?? {};
-    } catch { /* no metadata */ }
+    const opts = { tiff: true, exif: true, gps: true, icc: true, iptc: true, xmp: true, makerNote: false };
+    const tryParse = async (src: Blob | ArrayBuffer) => {
+      try {
+        return ((await Promise.race([exifr.parse(src as any, opts), new Promise((r) => setTimeout(() => r(null), 5000))])) ?? {}) as Meta;
+      } catch { return {} as Meta; }
+    };
+    meta = await tryParse(file);
     if (RAWLIKE.test(file.name)) {
+      // RAW: exifr often fails (CR3) → also read the header bytes and the embedded JPEG's Exif, merging missing fields.
+      const merge = (extra: Meta) => { for (const [k, v] of Object.entries(extra)) if ((meta as any)[k] == null) (meta as any)[k] = v; };
+      if (!(meta as any).Model || !(meta as any).FNumber) merge(await tryParse(await file.slice(0, Math.min(file.size, 8 * 1024 * 1024)).arrayBuffer()));
       const { extractRawPreview } = await import("./raw-preview");
       let p = await extractRawPreview(file, { deep: false });
       if (!p) p = await extractRawPreview(file, { deep: true });
-      if (p) url = URL.createObjectURL(p);
+      if (p) {
+        url = URL.createObjectURL(p);
+        if (!(meta as any).Model || !(meta as any).FNumber || !(meta as any).ExposureTime) merge(await tryParse(await p.arrayBuffer()));
+      }
       else try {
         const th = await exifr.thumbnail(file);
         if (th) url = URL.createObjectURL(new Blob([th as BlobPart], { type: "image/jpeg" }));
