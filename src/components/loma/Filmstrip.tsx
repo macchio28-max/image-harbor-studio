@@ -10,9 +10,10 @@ type Props = {
   setFilter: (f: CullFilter) => void;
   onSelect: (id: string) => void;
   onSendBatch: () => void;
+  hideLock?: boolean;
 };
 
-export function Filmstrip({ items, total, current, filter, setFilter, onSelect, onSendBatch }: Props) {
+export function Filmstrip({ items, total, current, filter, setFilter, onSelect, onSendBatch, hideLock }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.querySelector(`[data-id="${current}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -36,9 +37,9 @@ export function Filmstrip({ items, total, current, filter, setFilter, onSelect, 
     <div className="border-t border-border bg-toolbar px-3 pb-2 pt-1.5">
       <div className="mb-1.5 flex items-center gap-1.5 overflow-x-auto">
         <button className={chip(filter.kind === "all")} onClick={() => setFilter({ ...filter, kind: "all" })}>Tutte</button>
-        <button className={chip(filter.kind === "locked")} onClick={() => setFilter({ ...filter, kind: "locked" })}>
+        {!hideLock && <button className={chip(filter.kind === "locked")} onClick={() => setFilter({ ...filter, kind: "locked" })}>
           <Lock className="mr-1 inline h-3 w-3" />Solo lucchettate
-        </button>
+        </button>}
         <button className={chip(filter.kind === "flagged")} onClick={() => setFilter({ ...filter, kind: "flagged" })}>
           <Flag className="mr-1 inline h-3 w-3" />Solo flaggate
         </button>
@@ -75,7 +76,7 @@ export function Filmstrip({ items, total, current, filter, setFilter, onSelect, 
                 {i.rating}<Star className="h-2.5 w-2.5 fill-current" />
               </span>
             )}
-            {i.locked && (
+            {i.locked && !hideLock && (
               <span className="absolute right-0.5 top-0.5 rounded bg-background/80 p-0.5 text-chart-3"><Lock className="h-3 w-3" /></span>
             )}
             {i.flagged && (

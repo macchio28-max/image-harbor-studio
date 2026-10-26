@@ -5,6 +5,7 @@ import {
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
   FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, Repeat, LayoutGrid, Square, Printer, Share2,
 } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 import { ConvertDialog } from "./ConvertDialog";
 import { PrintDialog } from "./PrintDialog";
@@ -185,6 +186,8 @@ export function LomaViewer() {
   const [filter, setFilter] = useState<CullFilter>({ kind: "all", minStars: 0 });
   const [stripOpen, setStripOpen] = useState(true);
   const [view, setView] = useState<"loupe" | "grid">("loupe");
+  const [mob, setMob] = useState(false);
+  useEffect(() => setMob(isTouchDevice()), []);
   const [gridSize, setGridSize] = useState(180);
   const openLoupe = (id?: string | null) => { setView("loupe"); const it = session.find((s) => s.id === (id ?? curId)); if (it) { setCurId(it.id); openFile(it.file); } };
   const multiInput = useRef<HTMLInputElement>(null);
@@ -772,8 +775,16 @@ export function LomaViewer() {
         <Group>
           <Tool icon={<HardDrive className="text-primary" />} label="Importa" tip="Importa scheda / cartella" onClick={() => folderInput.current?.click()} />
           <Tool icon={<Images />} label="Apri" tip="Apri più file" onClick={() => multiInput.current?.click()} />
-          <Tool icon={<GalleryHorizontal />} label="Strip" tip="Filmstrip" active={stripOpen && session.length > 0} onClick={() => setStripOpen((o) => !o)} />
-          <Tool icon={view === "grid" ? <Square /> : <LayoutGrid />} label={view === "grid" ? "Singola" : "Griglia"} active={view === "grid"} onClick={() => session.length ? (view === "grid" ? openLoupe() : setView("grid")) : notify("Importa prima più foto.")} />
+          <Tool icon={<GalleryHorizontal />} label="Strip" tip="Filmstrip" active={stripOpen && session.length > 0 && !(mob && view === "grid")} onClick={() => {
+            if (mob) { const on = !(stripOpen && view !== "grid"); setStripOpen(on); if (on && view === "grid") openLoupe(); return; }
+            setStripOpen((o) => !o);
+          }} />
+          <Tool icon={view === "grid" ? <Square /> : <LayoutGrid />} label={view === "grid" ? "Singola" : "Griglia"} active={view === "grid"} onClick={() => {
+            if (!session.length) return notify("Importa prima più foto.");
+            if (view === "grid") return openLoupe();
+            if (mob) setStripOpen(false);
+            setView("grid");
+          }} />
           <Tool icon={<Save className="text-primary" />} label="Salva" onClick={save} />
           <Tool icon={<MousePointer2 />} label="Area" tip="Seleziona area" active={mode === "select"} onClick={() => setMode("select")} />
           <Tool icon={<Hand />} label="Sposta" active={mode === "move"} onClick={() => setMode("move")} />
@@ -949,11 +960,26 @@ export function LomaViewer() {
               </button>
             </>
           )}
+          {img && view === "loupe" && visible.length > 1 && (["prev", "next"] as const).map((dir) => (
+            <button
+              key={dir}
+              aria-label={dir === "prev" ? "Foto precedente" : "Foto successiva"}
+              title={dir === "prev" ? "Precedente (←)" : "Successiva (→)"}
+              onPointerDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); step(dir === "prev" ? -1 : 1); }}
+              className={`group absolute top-1/2 z-30 flex h-2/5 w-14 -translate-y-1/2 items-center justify-center ${dir === "prev" ? "left-0" : "right-0"}`}
+            >
+              <span className="rounded-full bg-popover/70 p-2 text-foreground opacity-70 shadow transition group-hover:bg-popover group-hover:opacity-100">
+                {dir === "prev" ? <ChevronLeft className="h-6 w-6" /> : <ChevronRight className="h-6 w-6" />}
+              </span>
+            </button>
+          ))}
           {toast && (
             <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md bg-popover px-4 py-2 text-sm shadow-xl">{toast}</div>
           )}
           {view === "grid" && session.length > 0 && (
-            <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} />
+            <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} hideLock={mob} />
           )}
         </main>
         {compare && active === "A" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="B" onActivate={swapActive} />}
@@ -1026,10 +1052,10 @@ export function LomaViewer() {
         </aside>
       </div>
 
-      {session.length > 0 && stripOpen && (
+      {session.length > 0 && stripOpen && !(mob && view === "grid") && (
         <Filmstrip
           items={visible} total={session.length} current={curId} filter={filter} setFilter={setFilter}
-          onSelect={selectItem} onSendBatch={sendBatch}
+          onSelect={selectItem} onSendBatch={sendBatch} hideLock={mob}
         />
       )}
 

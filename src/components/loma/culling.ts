@@ -109,13 +109,26 @@ export async function readCullTags(file: File): Promise<{ rating: number; locked
     const b = scanCullBytes(head);
     if (b.rating != null) rating = b.rating;
     flagged = b.flagged;
-    // CR2/TIFF: XMP packet may sit beyond the first 4 MB → read exactly that block.
-    const ptr = readIfd0(head, 0).xmp;
-    if (ptr && ptr.len > 0 && ptr.len < 2 * 1024 * 1024 && ptr.off + ptr.len > head.length && ptr.off < file.size) {
-      const t = new TextDecoder("latin1").decode(await file.slice(ptr.off, ptr.off + ptr.len).arrayBuffer());
+    const merge = (t: string) => {
       const x = scanXmpText(t);
       if (x.rating != null) rating = Math.max(rating, x.rating);
       if (x.flagged) flagged = true;
+      return x.rating != null;
+    };
+    // CR2/TIFF: XMP packet may sit beyond the first 4 MB → read exactly that block.
+    const ptr = readIfd0(head, 0).xmp;
+    let found = b.rating != null;
+    if (ptr && ptr.len > 0 && ptr.len < 2 * 1024 * 1024 && ptr.off + ptr.len > head.length && ptr.off < file.size) {
+      found = merge(new TextDecoder("latin1").decode(await file.slice(ptr.off, ptr.off + ptr.len).arrayBuffer())) || found;
+    }
+    // Still nothing: XMP often sits at the end (DNG/NEF/ARW edited) or deeper in the header → tail + chunked header scan up to 24 MB.
+    if (!found && file.size > head.length) {
+      const tailFrom = Math.max(head.length, file.size - 1024 * 1024);
+      found = merge(new TextDecoder("latin1").decode(await file.slice(tailFrom).arrayBuffer()));
+      const CH = 4 * 1024 * 1024, OV = 4096, limit = Math.min(tailFrom, 24 * 1024 * 1024);
+      for (let o = head.length - OV; !found && o < limit; o += CH) {
+        found = merge(new TextDecoder("latin1").decode(await file.slice(o, Math.min(o + CH + OV, limit)).arrayBuffer()));
+      }
     }
   } catch { /* unreadable */ }
   locked = await fileReadOnly(file);
