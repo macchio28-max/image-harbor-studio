@@ -40,33 +40,55 @@ export function cullFromMeta(m: any) {
   return { rating, locked, flagged };
 }
 
-/** Byte-level culling tags: XMP packet (CR3/NEF/ARW/DNG) + TIFF IFD0 Rating 0x4746 (CR2/NEF/ARW). */
-export function scanCullBytes(bytes: Uint8Array): { rating: number | null; flagged: boolean } {
+const clampR = (n: number) => Math.max(0, Math.min(5, Math.round(n)));
+
+/** Rating/pick from XMP text. Canon writes single quotes (xmp:Rating='3') or element form (<xmp:Rating>3</xmp:Rating>). */
+export function scanXmpText(txt: string): { rating: number | null; flagged: boolean } {
   let rating: number | null = null;
-  let flagged = false;
-  const txt = new TextDecoder("latin1").decode(bytes);
-  const m = txt.match(/xmp:Rating(?:="|>)\s*(-?\d+)/);
-  if (m) rating = Number(m[1]);
-  if (/photoshop:Urgency(?:="|>)\s*1\b/.test(txt) || /xmpDM:pick(?:="|>)\s*1/.test(txt)) flagged = true;
-  if (rating == null && bytes.length > 16) {
-    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const bo = dv.getUint16(0);
-    const le = bo === 0x4949;
-    if (le || bo === 0x4d4d) {
-      const ifd = dv.getUint32(4, le);
-      if (ifd + 2 < bytes.length) {
-        const n = dv.getUint16(ifd, le);
-        for (let i = 0; i < n && ifd + 2 + i * 12 + 12 <= bytes.length; i++) {
-          const e = ifd + 2 + i * 12;
-          const tag = dv.getUint16(e, le);
-          if (tag === 0x4746) { rating = dv.getUint16(e + 8, le); break; }
-          if (tag === 0x4749) rating = Math.round(dv.getUint16(e + 8, le) / 20);
-        }
-      }
-    }
+  const pats = [
+    /\b(?:xmp|xap):Rating\s*=\s*["']\s*(-?\d+)/g,
+    /<(?:xmp|xap):Rating>\s*(-?\d+)\s*</g,
+  ];
+  for (const re of pats) for (const m of txt.matchAll(re)) rating = Math.max(rating ?? 0, Number(m[1]));
+  const pct = txt.match(/MicrosoftPhoto:Rating\s*(?:=\s*["']|>)\s*(\d+)/);
+  if (pct) rating = Math.max(rating ?? 0, Number(pct[1]) / 20);
+  const flagged = /photoshop:Urgency\s*(?:=\s*["']|>)\s*1\b/.test(txt) || /xmpDM:pick\s*(?:=\s*["']|>)\s*1/.test(txt);
+  return { rating: rating == null ? null : clampR(rating), flagged };
+}
+
+/** TIFF IFD0 at `base`: Rating 0x4746, RatingPercent 0x4749 and XMP pointer 0x02bc. */
+export function readIfd0(bytes: Uint8Array, base = 0): { rating: number | null; xmp: { off: number; len: number } | null } {
+  const out = { rating: null as number | null, xmp: null as { off: number; len: number } | null };
+  if (bytes.length < base + 16) return out;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const bo = dv.getUint16(base);
+  const le = bo === 0x4949;
+  if (!le && bo !== 0x4d4d) return out;
+  const ifd = base + dv.getUint32(base + 4, le);
+  if (ifd + 2 > bytes.length) return out;
+  const n = dv.getUint16(ifd, le);
+  for (let i = 0; i < n && ifd + 2 + i * 12 + 12 <= bytes.length; i++) {
+    const e = ifd + 2 + i * 12;
+    const tag = dv.getUint16(e, le), type = dv.getUint16(e + 2, le);
+    const v16 = () => (type === 3 ? dv.getUint16(e + 8, le) : dv.getUint32(e + 8, le));
+    if (tag === 0x4746) out.rating = Math.max(out.rating ?? 0, clampR(v16()));
+    else if (tag === 0x4749) out.rating = Math.max(out.rating ?? 0, clampR(v16() / 20));
+    else if (tag === 0x02bc) out.xmp = { off: base + dv.getUint32(e + 8, le), len: dv.getUint32(e + 4, le) };
   }
-  if (rating != null) rating = Math.max(0, Math.min(5, rating < 0 ? 0 : rating));
-  return { rating, flagged };
+  return out;
+}
+
+/** Byte-level culling tags: XMP packet (CR2/CR3/NEF/ARW/DNG/JPEG) + TIFF IFD0 Rating (CR2/NEF/ARW) + CR3 CMT1. */
+export function scanCullBytes(bytes: Uint8Array): { rating: number | null; flagged: boolean } {
+  const txt = new TextDecoder("latin1").decode(bytes);
+  const x = scanXmpText(txt);
+  let rating = x.rating;
+  const bump = (r: number | null) => { if (r != null) rating = Math.max(rating ?? 0, r); };
+  bump(readIfd0(bytes, 0).rating);
+  // CR3: IFD0 lives inside the "CMT1" box of the Canon uuid in moov.
+  const cmt = txt.indexOf("CMT1");
+  if (cmt > 0) bump(readIfd0(bytes, cmt + 4).rating);
+  return { rating, flagged: x.flagged };
 }
 
 async function fileReadOnly(file: File): Promise<boolean> {
@@ -76,33 +98,53 @@ async function fileReadOnly(file: File): Promise<boolean> {
   try { return !!(await desk.isReadOnly(path)); } catch { return false; }
 }
 
+const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T | null> =>
+  Promise.race([p.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+
+/** Stars / pick / protection only (no thumbnails): direct byte read, never blocked by exifr. */
+export async function readCullTags(file: File): Promise<{ rating: number; locked: boolean; flagged: boolean }> {
+  let rating = 0, flagged = false, locked = false;
+  try {
+    const head = new Uint8Array(await file.slice(0, Math.min(file.size, 4 * 1024 * 1024)).arrayBuffer());
+    const b = scanCullBytes(head);
+    if (b.rating != null) rating = b.rating;
+    flagged = b.flagged;
+    // CR2/TIFF: XMP packet may sit beyond the first 4 MB → read exactly that block.
+    const ptr = readIfd0(head, 0).xmp;
+    if (ptr && ptr.len > 0 && ptr.len < 2 * 1024 * 1024 && ptr.off + ptr.len > head.length && ptr.off < file.size) {
+      const t = new TextDecoder("latin1").decode(await file.slice(ptr.off, ptr.off + ptr.len).arrayBuffer());
+      const x = scanXmpText(t);
+      if (x.rating != null) rating = Math.max(rating, x.rating);
+      if (x.flagged) flagged = true;
+    }
+  } catch { /* unreadable */ }
+  locked = await fileReadOnly(file);
+  return { rating, locked, flagged };
+}
+
 /** Fast read: embedded JPEG preview + culling tags, no demosaicing. */
 export async function readCull(file: File): Promise<Omit<CullItem, "id" | "file">> {
+  const tags = await readCullTags(file);
   const exifr = (await import("exifr")).default;
-  let meta: Record<string, any> = {};
-  try {
-    meta = (await exifr.parse(file, { tiff: true, exif: true, iptc: true, xmp: true, makerNote: true, mergeOutput: true })) ?? {};
-  } catch { /* none */ }
+  const meta = ((await withTimeout(
+    exifr.parse(file, { tiff: true, exif: true, iptc: true, xmp: true, makerNote: true, mergeOutput: true }), 4000,
+  )) ?? {}) as Record<string, any>;
   let thumb: string | null = null;
   // Grid/filmstrip: small embedded thumbnail first (fast); full-size preview only as fallback.
-  try {
-    const th = await exifr.thumbnail(file);
-    if (th) thumb = URL.createObjectURL(new Blob([th as BlobPart], { type: "image/jpeg" }));
-  } catch { /* none */ }
+  const th = await withTimeout(exifr.thumbnail(file), 4000);
+  if (th) thumb = URL.createObjectURL(new Blob([th as BlobPart], { type: "image/jpeg" }));
   if (!thumb && /\.(cr2|cr3|nef|nrw|arw|srf|sr2|dng|orf|rw2|raf|pef|srw|3fr|iiq|erf|kdc|tiff?)$/i.test(file.name)) {
-    const p = await extractRawPreview(file, { deep: false });
+    const p = await withTimeout(extractRawPreview(file, { deep: false }), 8000);
     if (p) thumb = URL.createObjectURL(p);
   }
   if (!thumb && /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(file.name)) thumb = URL.createObjectURL(file);
   const base = cullFromMeta(meta);
-  try {
-    const head = new Uint8Array(await file.slice(0, Math.min(file.size, 4 * 1024 * 1024)).arrayBuffer());
-    const b = scanCullBytes(head);
-    if (b.rating != null && b.rating > base.rating) base.rating = b.rating;
-    if (b.flagged) base.flagged = true;
-  } catch { /* unreadable */ }
-  if (!base.locked && (await fileReadOnly(file))) base.locked = true;
-  return { thumb, ...base };
+  return {
+    thumb,
+    rating: Math.max(base.rating, tags.rating),
+    locked: base.locked || tags.locked,
+    flagged: base.flagged || tags.flagged,
+  };
 }
 
 export type CullFilter = { kind: "all" | "locked" | "flagged"; minStars: number };
