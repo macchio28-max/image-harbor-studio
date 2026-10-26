@@ -40,6 +40,42 @@ export function cullFromMeta(m: any) {
   return { rating, locked, flagged };
 }
 
+/** Byte-level culling tags: XMP packet (CR3/NEF/ARW/DNG) + TIFF IFD0 Rating 0x4746 (CR2/NEF/ARW). */
+export function scanCullBytes(bytes: Uint8Array): { rating: number | null; flagged: boolean } {
+  let rating: number | null = null;
+  let flagged = false;
+  const txt = new TextDecoder("latin1").decode(bytes);
+  const m = txt.match(/xmp:Rating(?:="|>)\s*(-?\d+)/);
+  if (m) rating = Number(m[1]);
+  if (/photoshop:Urgency(?:="|>)\s*1\b/.test(txt) || /xmpDM:pick(?:="|>)\s*1/.test(txt)) flagged = true;
+  if (rating == null && bytes.length > 16) {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const bo = dv.getUint16(0);
+    const le = bo === 0x4949;
+    if (le || bo === 0x4d4d) {
+      const ifd = dv.getUint32(4, le);
+      if (ifd + 2 < bytes.length) {
+        const n = dv.getUint16(ifd, le);
+        for (let i = 0; i < n && ifd + 2 + i * 12 + 12 <= bytes.length; i++) {
+          const e = ifd + 2 + i * 12;
+          const tag = dv.getUint16(e, le);
+          if (tag === 0x4746) { rating = dv.getUint16(e + 8, le); break; }
+          if (tag === 0x4749) rating = Math.round(dv.getUint16(e + 8, le) / 20);
+        }
+      }
+    }
+  }
+  if (rating != null) rating = Math.max(0, Math.min(5, rating < 0 ? 0 : rating));
+  return { rating, flagged };
+}
+
+async function fileReadOnly(file: File): Promise<boolean> {
+  const desk = (globalThis as any).lomaDesktop;
+  const path = (file as any).lomaPath || desk?.getPathForFile?.(file);
+  if (!path || !desk?.isReadOnly) return false;
+  try { return !!(await desk.isReadOnly(path)); } catch { return false; }
+}
+
 /** Fast read: embedded JPEG preview + culling tags, no demosaicing. */
 export async function readCull(file: File): Promise<Omit<CullItem, "id" | "file">> {
   const exifr = (await import("exifr")).default;
@@ -58,7 +94,15 @@ export async function readCull(file: File): Promise<Omit<CullItem, "id" | "file"
     if (p) thumb = URL.createObjectURL(p);
   }
   if (!thumb && /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(file.name)) thumb = URL.createObjectURL(file);
-  return { thumb, ...cullFromMeta(meta) };
+  const base = cullFromMeta(meta);
+  try {
+    const head = new Uint8Array(await file.slice(0, Math.min(file.size, 4 * 1024 * 1024)).arrayBuffer());
+    const b = scanCullBytes(head);
+    if (b.rating != null && b.rating > base.rating) base.rating = b.rating;
+    if (b.flagged) base.flagged = true;
+  } catch { /* unreadable */ }
+  if (!base.locked && (await fileReadOnly(file))) base.locked = true;
+  return { thumb, ...base };
 }
 
 export type CullFilter = { kind: "all" | "locked" | "flagged"; minStars: number };

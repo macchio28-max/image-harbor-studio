@@ -109,6 +109,10 @@ ipcMain.handle("loma:clearCache", async () => {
   try { await session.defaultSession.clearCache(); } catch {}
   return { ok: true, freed };
 });
+// Canon/Nikon/Sony "Protect" sets the read-only attribute on the card's file (not inside the RAW).
+ipcMain.handle("loma:isReadOnly", (_e, p) => {
+  try { require("fs").accessSync(p, require("fs").constants.W_OK); return false; } catch (e) { return e && e.code !== "ENOENT"; }
+});
 ipcMain.handle("loma:openPath", (_e, p) => shell.openPath(p));
 ipcMain.handle("loma:openExternal", (_e, u) => (/^https?:\/\//.test(u) ? shell.openExternal(u) : null));
 
