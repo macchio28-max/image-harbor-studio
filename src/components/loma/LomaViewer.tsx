@@ -190,6 +190,11 @@ export function LomaViewer() {
       };
       let meta: Meta = await tryParse(isRaw ? file.slice(0, Math.min(file.size, 8 * 1024 * 1024)) : file);
       const merge = (extra: Meta) => { for (const [k, v] of Object.entries(extra)) if ((meta as any)[k] == null) (meta as any)[k] = v; };
+      if (isRaw) {
+        // Own TIFF reader first: works on CR2/CR3/NEF/ARW/DNG headers where exifr often returns nothing.
+        const { readRawExif } = await import("./raw-exif");
+        merge(readRawExif(new Uint8Array(await file.slice(0, Math.min(file.size, 2 * 1024 * 1024)).arrayBuffer())));
+      }
       if (isRaw && (!(meta as any).Model || !(meta as any).FNumber)) {
         const head = await file.slice(0, Math.min(file.size, 8 * 1024 * 1024)).arrayBuffer();
         const u = new Uint8Array(head), dv = new DataView(head), txt = new TextDecoder("latin1").decode(u.subarray(0, 512 * 1024));
