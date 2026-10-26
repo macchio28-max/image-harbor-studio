@@ -185,6 +185,8 @@ export function LomaViewer() {
   const [filter, setFilter] = useState<CullFilter>({ kind: "all", minStars: 0 });
   const [stripOpen, setStripOpen] = useState(true);
   const [view, setView] = useState<"loupe" | "grid">("loupe");
+  const [mob, setMob] = useState(false);
+  useEffect(() => setMob(isTouchDevice()), []);
   const [gridSize, setGridSize] = useState(180);
   const openLoupe = (id?: string | null) => { setView("loupe"); const it = session.find((s) => s.id === (id ?? curId)); if (it) { setCurId(it.id); openFile(it.file); } };
   const multiInput = useRef<HTMLInputElement>(null);
