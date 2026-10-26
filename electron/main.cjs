@@ -109,9 +109,20 @@ ipcMain.handle("loma:clearCache", async () => {
   try { await session.defaultSession.clearCache(); } catch {}
   return { ok: true, freed };
 });
-// Canon/Nikon/Sony "Protect" sets the read-only attribute on the card's file (not inside the RAW).
+// Canon/Nikon/Sony "Protect" sets the DOS read-only attribute on the card's file (not inside the RAW).
+// Windows: read-only attribute → no write bits / access W_OK fails. macOS (FAT/exFAT cards): shown as
+// missing write bits or the "locked" (uchg) flag, which access() doesn't always report → check via stat.
 ipcMain.handle("loma:isReadOnly", (_e, p) => {
-  try { require("fs").accessSync(p, require("fs").constants.W_OK); return false; } catch (e) { return e && e.code !== "ENOENT"; }
+  try {
+    const st = fs.statSync(p);
+    if ((st.mode & 0o222) === 0) return true;
+    try { fs.accessSync(p, fs.constants.W_OK); } catch (e) { if (e && e.code !== "ENOENT") return true; }
+    if (process.platform === "darwin") {
+      const flags = parseInt(require("child_process").execFileSync("/usr/bin/stat", ["-f", "%f", p], { encoding: "utf8" }).trim(), 10);
+      if (Number.isFinite(flags) && (flags & 0x2 || flags & 0x20000)) return true; // UF_IMMUTABLE / SF_IMMUTABLE
+    }
+    return false;
+  } catch { return false; }
 });
 ipcMain.handle("loma:openPath", (_e, p) => shell.openPath(p));
 ipcMain.handle("loma:openExternal", (_e, u) => (/^https?:\/\//.test(u) ? shell.openExternal(u) : null));
