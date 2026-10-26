@@ -230,7 +230,7 @@ export function LomaViewer() {
   const paneView = (v: { scale: number; off: { x: number; y: number } }) => setOther((o) => (o ? { ...o, ...v } : o));
   const swapActive = () => {
     let snap: string | null = null;
-    try { if (img && preview.current) snap = preview.current.toDataURL("image/jpeg", 0.9); } catch { /* ignore */ }
+    try { if (img && preview.current && (crop || JSON.stringify(adjust) !== JSON.stringify(defaultAdjust))) snap = preview.current.toDataURL("image/jpeg", 0.9); } catch { /* ignore */ }
     const o = other;
     setOther({ img, adjust, crop, scale, off, curId, snap });
     setActive((a) => (a === "A" ? "B" : "A"));
