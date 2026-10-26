@@ -8,10 +8,13 @@ export type PaneSlot = {
 };
 
 /** Inactive side of the A/B comparison: independent zoom & pan; click to make it the active photo. */
-export function ComparePane({ slot, label, onActivate }: { slot: PaneSlot | null; label: string; onActivate: () => void }) {
+type View = { scale: number; off: { x: number; y: number } };
+export function ComparePane({ slot, label, onActivate, view, onView }: { slot: PaneSlot | null; label: string; onActivate: () => void; view?: View | null; onView?: (v: View) => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-  const [off, setOff] = useState({ x: 0, y: 0 });
+  const [scale, setScale] = useState(view?.scale ?? 1);
+  const [off, setOff] = useState(view?.off ?? { x: 0, y: 0 });
+  const kept = useRef(!!view);
+  useEffect(() => { onView?.({ scale, off }); }, [scale, off]); // eslint-disable-line react-hooks/exhaustive-deps
   const st = useRef({ scale, off });
   st.current = { scale, off };
   const g = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
@@ -24,7 +27,7 @@ export function ComparePane({ slot, label, onActivate }: { slot: PaneSlot | null
     setScale(s);
     setOff({ x: (r.width - slot.w * s) / 2, y: (r.height - slot.h * s) / 2 });
   };
-  useEffect(() => { requestAnimationFrame(fit); }, [slot?.url, slot?.w, slot?.h]);
+  useEffect(() => { if (kept.current) { kept.current = false; return; } requestAnimationFrame(fit); }, [slot?.url, slot?.w, slot?.h]); // keep the zoom it had while active
 
   useEffect(() => {
     const el = ref.current;

@@ -226,6 +226,8 @@ export function LomaViewer() {
   const fitScale = useRef(1);
   const visible = applyFilter(session, filter);
 
+  // The non-active pane reports its own zoom/pan so swapping keeps both views exactly as left.
+  const paneView = (v: { scale: number; off: { x: number; y: number } }) => setOther((o) => (o ? { ...o, ...v } : o));
   const swapActive = () => {
     let snap: string | null = null;
     try { if (img && preview.current) snap = preview.current.toDataURL("image/jpeg", 0.9); } catch { /* ignore */ }
@@ -902,7 +904,7 @@ export function LomaViewer() {
         )}
         {/* Canvas */}
         <div className="flex min-w-0 flex-1 gap-2">
-        {compare && active === "B" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="A" onActivate={swapActive} />}
+        {compare && active === "B" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="A" onActivate={swapActive} view={other?.img ? { scale: other.scale, off: other.off } : null} onView={paneView} />}
         <main
           ref={stage}
           className={`relative min-w-0 flex-1 touch-none overflow-hidden rounded-lg border bg-canvas ${drag || compare ? "border-primary" : "border-border"} ${img ? (mode === "move" ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair") : ""}`}
@@ -1039,7 +1041,7 @@ export function LomaViewer() {
             <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} hideLock={mob} filter={filter} setFilter={setFilter} total={session.length} />
           )}
         </main>
-        {compare && active === "A" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="B" onActivate={swapActive} />}
+        {compare && active === "A" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="B" onActivate={swapActive} view={other?.img ? { scale: other.scale, off: other.off } : null} onView={paneView} />}
         </div>
 
         {/* Side panel */}
