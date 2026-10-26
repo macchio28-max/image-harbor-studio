@@ -35,6 +35,8 @@ const ACCEPT = "image/*,.tif,.tiff,.cr2,.cr3,.nef,.arw,.dng,.orf,.rw2,.raf,.pef,
 
 export function LomaViewer() {
   const [img, setImg] = useState<Loaded | null>(null);
+  const [touch, setTouch] = useState(false);
+  useEffect(() => setTouch(isTouchDevice()), []);
   const [scale, setScale] = useState(1);
   const [off, setOff] = useState({ x: 0, y: 0 });
   const [mode, setMode] = useState<Mode>("move");
@@ -157,7 +159,8 @@ export function LomaViewer() {
     } catch { /* no metadata */ }
     if (RAWLIKE.test(file.name)) {
       const { extractRawPreview } = await import("./raw-preview");
-      const p = await extractRawPreview(file);
+      let p = await extractRawPreview(file, { deep: false });
+      if (!p) p = await extractRawPreview(file, { deep: true });
       if (p) url = URL.createObjectURL(p);
       else try {
         const th = await exifr.thumbnail(file);
@@ -464,18 +467,12 @@ export function LomaViewer() {
   };
   const openAI = async (name: string, url: string) => {
     const mobile = isTouchDevice();
-    if (img && imgEl.current && mobile) {
-      const b = await renderClean(imgEl.current, adjust, crop, "image/jpeg");
-      const f = new File([b], `${baseName(img.file.name)}.jpg`, { type: "image/jpeg" });
-      if (navigator.canShare?.({ files: [f] })) {
-        try {
-          await navigator.share({ files: [f], title: "Invia a " + name, text: "Analizza questa immagine" });
-        } catch (e: any) {
-          if (e?.name !== "AbortError") notify(`Condivisione non riuscita: riprova toccando ${name}.`);
-        }
-        return;
-      }
-      if (mobile) { notify("Questo dispositivo non supporta la condivisione di file."); return; }
+    if (img && mobile) {
+      // Touch: each AI opens its own app/site (universal link) with the photo in the clipboard.
+      const ok = await copyToClipboard();
+      window.open(url, "_blank", "noopener");
+      notify(ok ? `Immagine copiata: in ${name} tieni premuto nella chat e scegli Incolla.` : `Apri ${name} e allega la foto dalla galleria.`);
+      return;
     }
     if (!img && isTouchDevice()) { notify(`Apri prima un'immagine da inviare a ${name}.`); return; }
     // Desktop: AI websites cannot receive a file from a link, so copy the photo to the clipboard and open the chat.
@@ -587,8 +584,15 @@ export function LomaViewer() {
   const sharePhoto = async () => {
     if (!img || !imgEl.current) return;
     try {
-      const b = await renderClean(imgEl.current, adjust, crop, "image/jpeg");
-      const f = new File([b], `${baseName(img.file.name)}.jpg`, { type: "image/jpeg" });
+      let f: File;
+      if (!isEdited() && !RAWLIKE.test(img.file.name)) f = img.file; // instant: original, no re-render
+      else if (!isEdited()) {
+        const b = await (await fetch(img.url)).blob(); // embedded RAW preview, already in memory
+        f = new File([b], `${baseName(img.file.name)}.jpg`, { type: "image/jpeg" });
+      } else {
+        const b = await renderClean(imgEl.current, adjust, crop, "image/jpeg");
+        f = new File([b], `${baseName(img.file.name)}.jpg`, { type: "image/jpeg" });
+      }
       const desk = (window as any).lomaDesktop;
       if (desk?.shareFile && desk.platform === "darwin") { const r = await desk.shareFile(f, f.name); if (r?.ok) return; }
       if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f], title: f.name }); return; }
@@ -793,12 +797,14 @@ export function LomaViewer() {
           <Tool icon={<B.FlowIcon />} label="Flow" onClick={() => openAI("Flow", "https://labs.google/fx/tools/flow")} />
         </Group>
         <Group>
+          {!touch && <>
           <Tool icon={<B.TopazPhotoIcon />} label="Topaz" tip="Topaz Photo AI" onClick={() => topaz("Topaz Photo AI")} />
           <Tool icon={<B.TopazGigapixelIcon />} label="Giga" tip="Topaz Gigapixel AI" onClick={() => topaz("Topaz Gigapixel AI")} />
-          <Tool icon={<B.PhotoshopIcon />} label="Ps" tip="Adobe Photoshop" onClick={() => topaz("Adobe Photoshop")} />
+          </>}
+          {!touch && <Tool icon={<B.PhotoshopIcon />} label="Ps" tip="Adobe Photoshop" onClick={() => topaz("Adobe Photoshop")} />}
           <Tool icon={<B.LightroomIcon />} label="Lr" tip="Adobe Lightroom" onClick={() => topaz("Adobe Lightroom")} />
-          <Tool icon={<B.LightroomClassicIcon />} label="Lrc" tip="Adobe Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
-          <Tool icon={<Settings />} label="App" tip="Percorsi programmi" onClick={() => setTopazOpen(true)} />
+          {!touch && <Tool icon={<B.LightroomClassicIcon />} label="Lrc" tip="Adobe Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />}
+          {!touch && <Tool icon={<Settings />} label="App" tip="Percorsi programmi" onClick={() => setTopazOpen(true)} />}
           <Tool icon={<Repeat />} label="Converti" tip="Converti immagini (singola o batch)" onClick={() => (img || session.length ? setConvOpen(true) : notify("Apri prima un'immagine"))} />
           <Tool icon={<Printer />} label="Stampa" tip="Stampa fotografica" onClick={openPrint} />
           <Tool icon={<Trash2 />} label="Cache" tip="Svuota cache e memoria" onClick={clearCache} />
@@ -839,9 +845,9 @@ export function LomaViewer() {
             if (!img) return;
             if ((e.target as HTMLElement).closest("button")) return;
             setSel(null);
-            if (scale >= 0.999) { fit(); return; }
+            if (scale >= 0.499) { fit(); return; }
             const r = stage.current!.getBoundingClientRect();
-            setZoom(1, e.clientX - r.left, e.clientY - r.top);
+            setZoom(0.5, e.clientX - r.left, e.clientY - r.top);
           }}
           onTouchStart={(e) => { const t = e.touches[0]!; swipe.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null; }}
           onTouchEnd={(e) => {
