@@ -350,8 +350,8 @@ export function LomaViewer() {
   keyRef.current = (e) => {
     const t = e.target as HTMLElement;
     if (t?.closest?.("input,textarea,select,[contenteditable]")) return;
-    if (e.key.toLowerCase() === "g" && !e.ctrlKey && !e.metaKey && session.length) { e.preventDefault(); setView("grid"); return; }
-    if (e.key === "Escape" && view === "loupe" && session.length > 1 && !document.fullscreenElement) { e.preventDefault(); setView("grid"); return; }
+    if (e.key.toLowerCase() === "g" && !e.ctrlKey && !e.metaKey && session.length) { e.preventDefault(); setStripOpen(false); setView("grid"); return; }
+    if (e.key === "Escape" && view === "loupe" && session.length > 1 && !document.fullscreenElement) { e.preventDefault(); setStripOpen(false); setView("grid"); return; }
     if ((e.key.toLowerCase() === "e" || e.key === "Enter") && view === "grid" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); openLoupe(); return; }
     if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
@@ -957,7 +957,7 @@ export function LomaViewer() {
                 {isFull ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </button>
               {session.length > 1 && view === "loupe" && (
-                <button onClick={() => { if (document.fullscreenElement) document.exitFullscreen?.(); setView("grid"); }} title="Torna alla griglia (Esc)"
+                <button onClick={() => { if (document.fullscreenElement) document.exitFullscreen?.(); setStripOpen(false); setView("grid"); }} title="Torna alla griglia (Esc)"
                   className="inline-flex items-center gap-1 rounded-md bg-background/40 p-1.5 text-xs text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
                   <LayoutGrid className="h-4 w-4" /> Griglia
                 </button>
