@@ -10,9 +10,10 @@ type Props = {
   setSize: (n: number) => void;
   onPick: (id: string) => void;
   onOpen: (id: string) => void;
+  hideLock?: boolean;
 };
 
-export function ContactSheet({ items, current, size, setSize, onPick, onOpen }: Props) {
+export function ContactSheet({ items, current, size, setSize, onPick, onOpen, hideLock }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const imgH = Math.round(size * 0.68);
   const cardH = imgH + 28;
@@ -49,7 +50,7 @@ export function ContactSheet({ items, current, size, setSize, onPick, onOpen }: 
               ) : (
                 <div className="flex h-full items-center justify-center text-muted-foreground"><ImageOff className="h-6 w-6" /></div>
               )}
-              {i.locked && <span className="absolute right-1 top-1 rounded bg-background/80 p-0.5 text-chart-3"><Lock className="h-3.5 w-3.5" /></span>}
+              {i.locked && !hideLock && <span className="absolute right-1 top-1 rounded bg-background/80 p-0.5 text-chart-3"><Lock className="h-3.5 w-3.5" /></span>}
               {i.flagged && <span className="absolute left-1 top-1 rounded bg-background/80 p-0.5 text-primary"><Flag className="h-3.5 w-3.5 fill-current" /></span>}
             </div>
             <div className="flex h-6 shrink-0 items-center gap-1 px-1.5">

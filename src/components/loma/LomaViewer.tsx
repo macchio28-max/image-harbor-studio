@@ -979,7 +979,7 @@ export function LomaViewer() {
             <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md bg-popover px-4 py-2 text-sm shadow-xl">{toast}</div>
           )}
           {view === "grid" && session.length > 0 && (
-            <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} />
+            <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} hideLock={mob} />
           )}
         </main>
         {compare && active === "A" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="B" onActivate={swapActive} />}
@@ -1052,10 +1052,10 @@ export function LomaViewer() {
         </aside>
       </div>
 
-      {session.length > 0 && stripOpen && (
+      {session.length > 0 && stripOpen && !(mob && view === "grid") && (
         <Filmstrip
           items={visible} total={session.length} current={curId} filter={filter} setFilter={setFilter}
-          onSelect={selectItem} onSendBatch={sendBatch}
+          onSelect={selectItem} onSendBatch={sendBatch} hideLock={mob}
         />
       )}
 
