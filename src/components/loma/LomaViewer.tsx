@@ -155,14 +155,35 @@ export function LomaViewer() {
     let url = URL.createObjectURL(file);
     const exifr = (await import("exifr")).default;
     let meta: Meta = {};
-    try {
-      meta = (await exifr.parse(file, { tiff: true, exif: true, gps: true, icc: true, iptc: true, xmp: true })) ?? {};
-    } catch { /* no metadata */ }
+    const opts = { tiff: true, exif: true, gps: true, icc: true, iptc: true, xmp: true, makerNote: false };
+    const tryParse = async (src: Blob | ArrayBuffer) => {
+      try {
+        return ((await Promise.race([exifr.parse(src as any, opts), new Promise((r) => setTimeout(() => r(null), 5000))])) ?? {}) as Meta;
+      } catch { return {} as Meta; }
+    };
+    meta = await tryParse(file);
     if (RAWLIKE.test(file.name)) {
+      // RAW: exifr often fails (CR3) → also read the header bytes and the embedded JPEG's Exif, merging missing fields.
+      const merge = (extra: Meta) => { for (const [k, v] of Object.entries(extra)) if ((meta as any)[k] == null) (meta as any)[k] = v; };
+      if (!(meta as any).Model || !(meta as any).FNumber) {
+        const head = await file.slice(0, Math.min(file.size, 8 * 1024 * 1024)).arrayBuffer();
+        merge(await tryParse(head));
+        // CR3: camera/lens/exposure live in CMT1..CMT3 boxes, each a standalone TIFF.
+        const u = new Uint8Array(head), dv = new DataView(head), txt = new TextDecoder("latin1").decode(u.subarray(0, 512 * 1024));
+        for (const tag of ["CMT1", "CMT2", "CMT3"]) {
+          const i = txt.indexOf(tag);
+          if (i < 4) continue;
+          const len = dv.getUint32(i - 4) - 8;
+          if (len > 8 && i + 4 + len <= u.length) merge(await tryParse(head.slice(i + 4, i + 4 + len)));
+        }
+      }
       const { extractRawPreview } = await import("./raw-preview");
       let p = await extractRawPreview(file, { deep: false });
       if (!p) p = await extractRawPreview(file, { deep: true });
-      if (p) url = URL.createObjectURL(p);
+      if (p) {
+        url = URL.createObjectURL(p);
+        if (!(meta as any).Model || !(meta as any).FNumber || !(meta as any).ExposureTime) merge(await tryParse(await p.arrayBuffer()));
+      }
       else try {
         const th = await exifr.thumbnail(file);
         if (th) url = URL.createObjectURL(new Blob([th as BlobPart], { type: "image/jpeg" }));
