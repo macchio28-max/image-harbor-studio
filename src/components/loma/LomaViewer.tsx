@@ -5,6 +5,7 @@ import {
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
   FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, Repeat, LayoutGrid, Square, Printer, Share2,
 } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 import { ConvertDialog } from "./ConvertDialog";
 import { PrintDialog } from "./PrintDialog";
@@ -959,6 +960,21 @@ export function LomaViewer() {
               </button>
             </>
           )}
+          {img && view === "loupe" && visible.length > 1 && (["prev", "next"] as const).map((dir) => (
+            <button
+              key={dir}
+              aria-label={dir === "prev" ? "Foto precedente" : "Foto successiva"}
+              title={dir === "prev" ? "Precedente (←)" : "Successiva (→)"}
+              onPointerDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); step(dir === "prev" ? -1 : 1); }}
+              className={`group absolute top-1/2 z-30 flex h-2/5 w-14 -translate-y-1/2 items-center justify-center ${dir === "prev" ? "left-0" : "right-0"}`}
+            >
+              <span className="rounded-full bg-popover/70 p-2 text-foreground opacity-70 shadow transition group-hover:bg-popover group-hover:opacity-100">
+                {dir === "prev" ? <ChevronLeft className="h-6 w-6" /> : <ChevronRight className="h-6 w-6" />}
+              </span>
+            </button>
+          ))}
           {toast && (
             <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md bg-popover px-4 py-2 text-sm shadow-xl">{toast}</div>
           )}
