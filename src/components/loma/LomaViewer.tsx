@@ -863,23 +863,29 @@ export function LomaViewer() {
           {!touch && <>
           <Tool icon={<B.TopazPhotoIcon />} label="Topaz" tip="Topaz Photo AI" onClick={() => topaz("Topaz Photo AI")} />
           <Tool icon={<B.TopazGigapixelIcon />} label="Giga" tip="Topaz Gigapixel AI" onClick={() => topaz("Topaz Gigapixel AI")} />
-          </>}
-          {!touch && <Tool icon={<B.PhotoshopIcon />} label="Ps" tip="Adobe Photoshop" onClick={() => topaz("Adobe Photoshop")} />}
+          <Tool icon={<B.PhotoshopIcon />} label="Ps" tip="Adobe Photoshop" onClick={() => topaz("Adobe Photoshop")} />
           <Tool icon={<B.LightroomIcon />} label="Lr" tip="Adobe Lightroom" onClick={() => topaz("Adobe Lightroom")} />
-          {!touch && <Tool icon={<B.LightroomClassicIcon />} label="Lrc" tip="Adobe Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />}
-          {!touch && <Tool icon={<Settings />} label="App" tip="Percorsi programmi" onClick={() => setTopazOpen(true)} />}
+          <Tool icon={<B.LightroomClassicIcon />} label="Lrc" tip="Adobe Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
+          <Tool icon={<Settings />} label="App" tip="Percorsi programmi" onClick={() => setTopazOpen(true)} />
+          </>}
           <Tool icon={<Repeat />} label="Converti" tip="Converti immagini (singola o batch)" onClick={() => (img || session.length ? setConvOpen(true) : notify("Apri prima un'immagine"))} />
           <Tool icon={<Printer />} label="Stampa" tip="Stampa fotografica" onClick={openPrint} />
           <Tool icon={<Trash2 />} label="Cache" tip="Svuota cache e memoria" onClick={clearCache} />
         </Group>
         <Group last>
-          <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
-          <Tool icon={<B.OneDriveIcon />} label="OneDrv" tip="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
-          <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => uploadCloud("iCloud Drive", "https://www.icloud.com/iclouddrive/")} />
-          <Tool icon={<B.MailIcon />} label="Mail" onClick={() => mail()} />
-          <Tool icon={<B.WhatsAppIcon />} label="WApp" tip="WhatsApp" onClick={() => whatsapp()} />
-          <Tool icon={<B.AirDropIcon />} label="AirDrop" onClick={() => airdrop()} />
-          <Tool icon={<B.LocalSendIcon />} label="LSend" tip="LocalSend" onClick={() => topaz("LocalSend")} />
+          {touch ? (
+            <Tool wide icon={<Share2 className="text-primary" />} label="Condividi" tip="Apri la condivisione del sistema" onClick={() => (img ? sharePhoto() : notify("Apri prima un'immagine da condividere."))} />
+          ) : (
+            <>
+            <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
+            <Tool icon={<B.OneDriveIcon />} label="OneDrv" tip="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
+            <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => uploadCloud("iCloud Drive", "https://www.icloud.com/iclouddrive/")} />
+            <Tool icon={<B.MailIcon />} label="Mail" onClick={() => mail()} />
+            <Tool icon={<B.WhatsAppIcon />} label="WApp" tip="WhatsApp" onClick={() => whatsapp()} />
+            <Tool icon={<B.AirDropIcon />} label="AirDrop" onClick={() => airdrop()} />
+            <Tool icon={<B.LocalSendIcon />} label="LSend" tip="LocalSend" onClick={() => topaz("LocalSend")} />
+            </>
+          )}
         </Group>
         </div></div>
       </header>
@@ -1134,12 +1140,12 @@ function Group({ children, last }: { children: ReactNode; last?: boolean }) {
   return <div className={`flex flex-[1_1_auto] items-stretch justify-between gap-px pr-1 ${last ? "" : "mr-0.5 border-r border-border"}`}>{children}</div>;
 }
 
-function Tool({ icon, label, onClick, active, tip }: { icon: ReactNode; label: string; onClick: () => void; active?: boolean; tip?: string }) {
+function Tool({ icon, label, onClick, active, tip, wide }: { icon: ReactNode; label: string; onClick: () => void; active?: boolean; tip?: string; wide?: boolean }) {
   return (
     <button
       onClick={onClick}
       title={tip ?? label}
-      className={`no-drag flex min-w-[34px] max-w-[64px] flex-1 flex-col items-center justify-start gap-0.5 rounded px-0.5 py-0.5 text-[clamp(8px,0.62vw,10.5px)] leading-tight hover:bg-accent ${active ? "bg-accent text-primary" : ""}`}
+      className={`no-drag flex min-w-[34px] ${wide ? "max-w-[96px]" : "max-w-[64px]"} flex-1 flex-col items-center justify-start gap-0.5 rounded px-0.5 py-0.5 text-[clamp(8px,0.62vw,10.5px)] leading-tight hover:bg-accent ${active ? "bg-accent text-primary" : ""}`}
     >
       <span className="flex h-6 items-center justify-center text-sm [&_svg]:h-[clamp(16px,1.25vw,22px)] [&_svg]:w-[clamp(16px,1.25vw,22px)]">{icon}</span>
       <span className="w-full truncate text-center">{label}</span>
