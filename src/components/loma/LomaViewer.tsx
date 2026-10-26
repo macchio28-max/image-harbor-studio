@@ -474,19 +474,6 @@ export function LomaViewer() {
       notify(ok ? `Immagine copiata: in ${name} tieni premuto nella chat e scegli Incolla.` : `Apri ${name} e allega la foto dalla galleria.`);
       return;
     }
-    if (false as boolean) {
-      const b = await renderClean(imgEl.current, adjust, crop, "image/jpeg");
-      const f = new File([b], `${baseName(img.file.name)}.jpg`, { type: "image/jpeg" });
-      if (navigator.canShare?.({ files: [f] })) {
-        try {
-          await navigator.share({ files: [f], title: "Invia a " + name, text: "Analizza questa immagine" });
-        } catch (e: any) {
-          if (e?.name !== "AbortError") notify(`Condivisione non riuscita: riprova toccando ${name}.`);
-        }
-        return;
-      }
-      if (mobile) { notify("Questo dispositivo non supporta la condivisione di file."); return; }
-    }
     if (!img && isTouchDevice()) { notify(`Apri prima un'immagine da inviare a ${name}.`); return; }
     // Desktop: AI websites cannot receive a file from a link, so copy the photo to the clipboard and open the chat.
     if (!img) { notify(`Apri prima un'immagine da inviare a ${name}.`); return; }
