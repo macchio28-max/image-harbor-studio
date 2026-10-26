@@ -123,9 +123,9 @@ export async function readCullTags(file: File, opts: { light?: boolean } = {}): 
     }
     // Still nothing: XMP often sits at the end (DNG/NEF/ARW edited) or deeper in the header → tail + chunked header scan up to 24 MB.
     if (!found && file.size > head.length) {
-      const tailFrom = Math.max(head.length, file.size - (opts.light ? 256 : 1024) * 1024);
+      const tailFrom = Math.max(head.length, file.size - (opts.light ? 64 : 1024) * 1024);
       found = merge(new TextDecoder("latin1").decode(await file.slice(tailFrom).arrayBuffer()));
-      const CH = 4 * 1024 * 1024, OV = 4096, limit = Math.min(tailFrom, (opts.light ? 4 : 24) * 1024 * 1024);
+      const CH = 4 * 1024 * 1024, OV = 4096, limit = Math.min(tailFrom, (opts.light ? 1 : 24) * 1024 * 1024);
       for (let o = head.length - OV; !found && o < limit; o += CH) {
         found = merge(new TextDecoder("latin1").decode(await file.slice(o, Math.min(o + CH + OV, limit)).arrayBuffer()));
       }

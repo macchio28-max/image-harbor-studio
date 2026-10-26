@@ -190,6 +190,11 @@ export function LomaViewer() {
       };
       let meta: Meta = await tryParse(isRaw ? file.slice(0, Math.min(file.size, 8 * 1024 * 1024)) : file);
       const merge = (extra: Meta) => { for (const [k, v] of Object.entries(extra)) if ((meta as any)[k] == null) (meta as any)[k] = v; };
+      if (isRaw) {
+        // Own TIFF reader first: works on CR2/CR3/NEF/ARW/DNG headers where exifr often returns nothing.
+        const { readRawExif } = await import("./raw-exif");
+        merge(readRawExif(new Uint8Array(await file.slice(0, Math.min(file.size, 2 * 1024 * 1024)).arrayBuffer())));
+      }
       if (isRaw && (!(meta as any).Model || !(meta as any).FNumber)) {
         const head = await file.slice(0, Math.min(file.size, 8 * 1024 * 1024)).arrayBuffer();
         const u = new Uint8Array(head), dv = new DataView(head), txt = new TextDecoder("latin1").decode(u.subarray(0, 512 * 1024));
@@ -259,6 +264,7 @@ export function LomaViewer() {
     const base: CullItem[] = files.map((file, i) => ({ id: `${i}-${file.name}`, file, thumb: null, rating: 0, locked: false, flagged: false }));
     setSession(base);
     setStripOpen(true);
+    setView(files.length > 1 ? "grid" : "loupe");
     setCurId(base[0]!.id);
     openFile(base[0]!.file);
     notify(`Importate ${files.length} foto.`);
@@ -268,7 +274,7 @@ export function LomaViewer() {
     // Fast path on every device: one light pass per file (tags + embedded thumbnail), full metadata only when a photo is opened.
     const light = true;
     const isTouch = typeof window !== "undefined" && (window.matchMedia("(pointer: coarse)").matches || /Android|iPad|iPhone/i.test(navigator.userAgent)) && !(window as any).lomaDesktop;
-    const WORKERS = isTouch ? 4 : 8;
+    const WORKERS = isTouch ? 3 : 3; // few parallel reads: slow card readers choke on many random seeks
     {
       let next = 0;
       const buf: { c: CullItem; r: Partial<CullItem> }[] = [];
@@ -343,6 +349,7 @@ export function LomaViewer() {
     const t = e.target as HTMLElement;
     if (t?.closest?.("input,textarea,select,[contenteditable]")) return;
     if (e.key.toLowerCase() === "g" && !e.ctrlKey && !e.metaKey && session.length) { e.preventDefault(); setView("grid"); return; }
+    if (e.key === "Escape" && view === "loupe" && session.length > 1 && !document.fullscreenElement) { e.preventDefault(); setView("grid"); return; }
     if ((e.key.toLowerCase() === "e" || e.key === "Enter") && view === "grid" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); openLoupe(); return; }
     if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
@@ -946,6 +953,12 @@ export function LomaViewer() {
                 className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
                 {isFull ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </button>
+              {session.length > 1 && view === "loupe" && (
+                <button onClick={() => { if (document.fullscreenElement) document.exitFullscreen?.(); setView("grid"); }} title="Torna alla griglia (Esc)"
+                  className="inline-flex items-center gap-1 rounded-md bg-background/40 p-1.5 text-xs text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
+                  <LayoutGrid className="h-4 w-4" /> Griglia
+                </button>
+              )}
               <button onClick={closeAll} title="Chiudi immagine e sessione"
                 className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-destructive/80 hover:text-destructive-foreground hover:opacity-100">
                 <X className="h-4 w-4" />
@@ -1023,7 +1036,7 @@ export function LomaViewer() {
             <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md bg-popover px-4 py-2 text-sm shadow-xl">{toast}</div>
           )}
           {view === "grid" && session.length > 0 && (
-            <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} hideLock={mob} />
+            <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} hideLock={mob} filter={filter} setFilter={setFilter} total={session.length} />
           )}
         </main>
         {compare && active === "A" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="B" onActivate={swapActive} />}
