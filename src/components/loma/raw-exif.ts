@@ -58,8 +58,8 @@ export function readTiffExif(bytes: Uint8Array, base = 0, out: Record<string, an
     };
     walk(dv.getUint32(base + 4, le), 0);
   } catch { /* partial data */ }
-  if (typeof out.FNumber === "number") out.FNumber = Math.round(out.FNumber * 10) / 10;
-  if (typeof out.FocalLength === "number") out.FocalLength = Math.round(out.FocalLength);
+  if (typeof out["FNumber"] === "number") out["FNumber"] = Math.round(out["FNumber"] * 10) / 10;
+  if (typeof out["FocalLength"] === "number") out["FocalLength"] = Math.round(out["FocalLength"]);
   return out;
 }
 
