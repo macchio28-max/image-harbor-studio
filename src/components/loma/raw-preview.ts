@@ -3,7 +3,7 @@
 
 type Cand = { off: number; len: number };
 
-const HEAD = 2 * 1024 * 1024;
+const HEAD = 4 * 1024 * 1024;
 
 function parseTiff(buf: DataView, base: number, fileSize: number): Cand[] {
   if (buf.byteLength < base + 8) return [];
@@ -79,7 +79,7 @@ function decodes(blob: Blob): Promise<boolean> {
 }
 
 /** Largest embedded JPEG preview as Blob, or null. */
-export async function extractRawPreview(file: File): Promise<Blob | null> {
+export async function extractRawPreview(file: File, opts: { deep?: boolean } = {}): Promise<Blob | null> {
   try {
     const head = new DataView(await file.slice(0, Math.min(HEAD, file.size)).arrayBuffer());
     let cands = parseTiff(head, 0, file.size);
@@ -87,8 +87,10 @@ export async function extractRawPreview(file: File): Promise<Blob | null> {
     for (const c of cands) if (await isJpeg(file, c)) ok.push(c);
     cands = ok;
     // Some RAWs (CR3, NEF/ARW maker-note previews, RAF) keep the full-size JPEG outside the main IFDs.
+    // Fast path: only scan the header bytes (slow SD cards); full-file scan only when deep and nothing usable found.
     const best = Math.max(0, ...cands.map((c) => c.len));
-    if (best < 1.5 * 1024 * 1024) cands = cands.concat(scan(new Uint8Array(await file.arrayBuffer())));
+    if (best < 200 * 1024) cands = cands.concat(scan(new Uint8Array(head.buffer)));
+    if (opts.deep && Math.max(0, ...cands.map((c) => c.len)) < 200 * 1024) cands = cands.concat(scan(new Uint8Array(await file.arrayBuffer())));
     cands.sort((a, b) => b.len - a.len);
     for (const c of cands.slice(0, 4)) {
       const blob = new Blob([file.slice(c.off, c.off + c.len)], { type: "image/jpeg" });
