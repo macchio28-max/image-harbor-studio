@@ -214,7 +214,7 @@ export function LomaViewer() {
   const [session, setSession] = useState<CullItem[]>([]);
   const [curId, setCurId] = useState<string | null>(null);
   const [filter, setFilter] = useState<CullFilter>({ kind: "all", minStars: 0 });
-  const [stripOpen, setStripOpen] = useState(true);
+  const [stripOpen, setStripOpen] = useState(false);
   const [view, setView] = useState<"loupe" | "grid">("loupe");
   const [mob, setMob] = useState(false);
   useEffect(() => setMob(isTouchDevice()), []);
@@ -265,7 +265,7 @@ export function LomaViewer() {
     session.forEach((s) => s.thumb && URL.revokeObjectURL(s.thumb));
     const base: CullItem[] = files.map((file, i) => ({ id: `${i}-${file.name}`, file, thumb: null, rating: 0, locked: false, flagged: false }));
     setSession(base);
-    setStripOpen(true);
+    setStripOpen(false);
     setView(files.length > 1 ? "grid" : "loupe");
     setCurId(base[0]!.id);
     openFile(base[0]!.file);
@@ -350,8 +350,8 @@ export function LomaViewer() {
   keyRef.current = (e) => {
     const t = e.target as HTMLElement;
     if (t?.closest?.("input,textarea,select,[contenteditable]")) return;
-    if (e.key.toLowerCase() === "g" && !e.ctrlKey && !e.metaKey && session.length) { e.preventDefault(); setView("grid"); return; }
-    if (e.key === "Escape" && view === "loupe" && session.length > 1 && !document.fullscreenElement) { e.preventDefault(); setView("grid"); return; }
+    if (e.key.toLowerCase() === "g" && !e.ctrlKey && !e.metaKey && session.length) { e.preventDefault(); setStripOpen(false); setView("grid"); return; }
+    if (e.key === "Escape" && view === "loupe" && session.length > 1 && !document.fullscreenElement) { e.preventDefault(); setStripOpen(false); setView("grid"); return; }
     if ((e.key.toLowerCase() === "e" || e.key === "Enter") && view === "grid" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); openLoupe(); return; }
     if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
@@ -822,14 +822,15 @@ export function LomaViewer() {
         <Group>
           <Tool icon={<HardDrive className="text-primary" />} label="Importa" tip="Importa scheda / cartella" onClick={() => folderInput.current?.click()} />
           <Tool icon={<Images />} label="Apri" tip="Apri più file" onClick={() => multiInput.current?.click()} />
-          <Tool icon={<GalleryHorizontal />} label="Strip" tip="Filmstrip" active={stripOpen && session.length > 0 && !(mob && view === "grid")} onClick={() => {
-            if (mob) { const on = !(stripOpen && view !== "grid"); setStripOpen(on); if (on && view === "grid") openLoupe(); return; }
-            setStripOpen((o) => !o);
+          <Tool icon={<GalleryHorizontal />} label="Strip" tip="Filmstrip" active={stripOpen && session.length > 0 && view !== "grid"} onClick={() => {
+            const on = !stripOpen;
+            setStripOpen(on);
+            if (on && view === "grid") openLoupe();
           }} />
           <Tool icon={view === "grid" ? <Square /> : <LayoutGrid />} label={view === "grid" ? "Singola" : "Griglia"} active={view === "grid"} onClick={() => {
             if (!session.length) return notify("Importa prima più foto.");
             if (view === "grid") return openLoupe();
-            if (mob) setStripOpen(false);
+            setStripOpen(false);
             setView("grid");
           }} />
           <Tool icon={<Save className="text-primary" />} label="Salva" onClick={save} />
@@ -956,7 +957,7 @@ export function LomaViewer() {
                 {isFull ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </button>
               {session.length > 1 && view === "loupe" && (
-                <button onClick={() => { if (document.fullscreenElement) document.exitFullscreen?.(); setView("grid"); }} title="Torna alla griglia (Esc)"
+                <button onClick={() => { if (document.fullscreenElement) document.exitFullscreen?.(); setStripOpen(false); setView("grid"); }} title="Torna alla griglia (Esc)"
                   className="inline-flex items-center gap-1 rounded-md bg-background/40 p-1.5 text-xs text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
                   <LayoutGrid className="h-4 w-4" /> Griglia
                 </button>
