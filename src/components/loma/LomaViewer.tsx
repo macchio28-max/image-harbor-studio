@@ -214,7 +214,7 @@ export function LomaViewer() {
   const [session, setSession] = useState<CullItem[]>([]);
   const [curId, setCurId] = useState<string | null>(null);
   const [filter, setFilter] = useState<CullFilter>({ kind: "all", minStars: 0 });
-  const [stripOpen, setStripOpen] = useState(true);
+  const [stripOpen, setStripOpen] = useState(false);
   const [view, setView] = useState<"loupe" | "grid">("loupe");
   const [mob, setMob] = useState(false);
   useEffect(() => setMob(isTouchDevice()), []);
@@ -265,7 +265,7 @@ export function LomaViewer() {
     session.forEach((s) => s.thumb && URL.revokeObjectURL(s.thumb));
     const base: CullItem[] = files.map((file, i) => ({ id: `${i}-${file.name}`, file, thumb: null, rating: 0, locked: false, flagged: false }));
     setSession(base);
-    setStripOpen(true);
+    setStripOpen(false);
     setView(files.length > 1 ? "grid" : "loupe");
     setCurId(base[0]!.id);
     openFile(base[0]!.file);
@@ -822,14 +822,15 @@ export function LomaViewer() {
         <Group>
           <Tool icon={<HardDrive className="text-primary" />} label="Importa" tip="Importa scheda / cartella" onClick={() => folderInput.current?.click()} />
           <Tool icon={<Images />} label="Apri" tip="Apri più file" onClick={() => multiInput.current?.click()} />
-          <Tool icon={<GalleryHorizontal />} label="Strip" tip="Filmstrip" active={stripOpen && session.length > 0 && !(mob && view === "grid")} onClick={() => {
-            if (mob) { const on = !(stripOpen && view !== "grid"); setStripOpen(on); if (on && view === "grid") openLoupe(); return; }
-            setStripOpen((o) => !o);
+          <Tool icon={<GalleryHorizontal />} label="Strip" tip="Filmstrip" active={stripOpen && session.length > 0 && view !== "grid"} onClick={() => {
+            const on = !stripOpen;
+            setStripOpen(on);
+            if (on && view === "grid") openLoupe();
           }} />
           <Tool icon={view === "grid" ? <Square /> : <LayoutGrid />} label={view === "grid" ? "Singola" : "Griglia"} active={view === "grid"} onClick={() => {
             if (!session.length) return notify("Importa prima più foto.");
             if (view === "grid") return openLoupe();
-            if (mob) setStripOpen(false);
+            setStripOpen(false);
             setView("grid");
           }} />
           <Tool icon={<Save className="text-primary" />} label="Salva" onClick={save} />
