@@ -1,7 +1,7 @@
 import type React from "react";
 import { useEffect, useRef } from "react";
 import { Flag, Lock, Star, ImageOff } from "lucide-react";
-import type { CullItem } from "./culling";
+import type { CullFilter, CullItem } from "./culling";
 
 type Props = {
   items: CullItem[];
@@ -11,10 +11,14 @@ type Props = {
   onPick: (id: string) => void;
   onOpen: (id: string) => void;
   hideLock?: boolean;
+  filter: CullFilter;
+  setFilter: (f: CullFilter) => void;
+  total: number;
 };
 
-export function ContactSheet({ items, current, size, setSize, onPick, onOpen, hideLock }: Props) {
+export function ContactSheet({ items, current, size, setSize, onPick, onOpen, hideLock, filter, setFilter, total }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const chip = (a: boolean) => `rounded px-2 py-0.5 text-xs whitespace-nowrap ${a ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-accent"}`;
   const imgH = Math.round(size * 0.68);
   const cardH = imgH + 28;
   useEffect(() => {
@@ -27,8 +31,16 @@ export function ContactSheet({ items, current, size, setSize, onPick, onOpen, hi
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
-        <span>Griglia · {items.length} foto</span>
+      <div className="flex items-center gap-2 overflow-x-auto border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
+        <span className="whitespace-nowrap">Griglia · {items.length} / {total}</span>
+        <span className="mx-1 h-4 w-px bg-border" />
+        <button className={chip(filter.kind === "all")} onClick={() => setFilter({ ...filter, kind: "all" })}>Tutte</button>
+        {!hideLock && <button className={chip(filter.kind === "locked")} onClick={() => setFilter({ ...filter, kind: "locked" })}><Lock className="mr-1 inline h-3 w-3" />Lucchettate</button>}
+        <button className={chip(filter.kind === "flagged")} onClick={() => setFilter({ ...filter, kind: "flagged" })}><Flag className="mr-1 inline h-3 w-3" />Flaggate</button>
+        <span className="mx-1 h-4 w-px bg-border" />
+        {[0, 1, 2, 3, 4, 5].map((n) => (
+          <button key={n} className={chip(filter.minStars === n)} onClick={() => setFilter({ ...filter, minStars: n })}>{n === 0 ? "★ tutte" : `≥ ${n}★`}</button>
+        ))}
         <span className="ml-auto">Dimensione</span>
         <input type="range" min={100} max={320} value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-32 accent-primary" />
       </div>
