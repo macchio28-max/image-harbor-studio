@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("lomaDesktop", {
   platform: process.platform,
+  isReadOnly: (p) => ipcRenderer.invoke("loma:isReadOnly", p),
   getPathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ""; } },
   pickApp: (name) => ipcRenderer.invoke("loma:pickApp", name),
   getApps: () => ipcRenderer.invoke("loma:getApps"),
