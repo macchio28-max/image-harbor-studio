@@ -261,14 +261,16 @@ export function LomaViewer() {
     const merge = (chunk: CullItem[], res: Partial<CullItem>[]) =>
       setSession((s) => s.map((x) => { const k = chunk.findIndex((c) => c.id === x.id); return k < 0 ? x : { ...x, ...res[k] }; }));
     // 1) stars / lock / flag first (only a few KB per file), so filters work right away
+    const light = typeof window !== "undefined" && (window.matchMedia("(pointer: coarse)").matches || /Android|iPad|iPhone/i.test(navigator.userAgent)) && !(window as any).lomaDesktop;
     for (let i = 0; i < base.length; i += 12) {
       const chunk = base.slice(i, i + 12);
-      merge(chunk, await Promise.all(chunk.map((c) => readCullTags(c.file).catch(() => ({})))));
+      merge(chunk, await Promise.all(chunk.map((c) => readCullTags(c.file, { light }).catch(() => ({})))));
     }
     // 2) thumbnails in small parallel batches (one slow file never blocks the others' tags)
     for (let i = 0; i < base.length; i += 6) {
       const chunk = base.slice(i, i + 6);
-      const res = await Promise.all(chunk.map((c) => readCull(c.file).catch(() => ({}) as Partial<CullItem>)));
+      const res = await Promise.all(chunk.map((c) => readCull(c.file, { light }).catch(() => ({}) as Partial<CullItem>)));
+      if (light) res.forEach((r) => { delete (r as any).rating; delete (r as any).locked; delete (r as any).flagged; });
       merge(chunk, res);
     }
   };

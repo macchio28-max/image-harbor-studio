@@ -102,10 +102,10 @@ const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T | null> =>
   Promise.race([p.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
 
 /** Stars / pick / protection only (no thumbnails): direct byte read, never blocked by exifr. */
-export async function readCullTags(file: File): Promise<{ rating: number; locked: boolean; flagged: boolean }> {
+export async function readCullTags(file: File, opts: { light?: boolean } = {}): Promise<{ rating: number; locked: boolean; flagged: boolean }> {
   let rating = 0, flagged = false, locked = false;
   try {
-    const head = new Uint8Array(await file.slice(0, Math.min(file.size, 4 * 1024 * 1024)).arrayBuffer());
+    const head = new Uint8Array(await file.slice(0, Math.min(file.size, (opts.light ? 1 : 4) * 1024 * 1024)).arrayBuffer());
     const b = scanCullBytes(head);
     if (b.rating != null) rating = b.rating;
     flagged = b.flagged;
@@ -123,9 +123,9 @@ export async function readCullTags(file: File): Promise<{ rating: number; locked
     }
     // Still nothing: XMP often sits at the end (DNG/NEF/ARW edited) or deeper in the header → tail + chunked header scan up to 24 MB.
     if (!found && file.size > head.length) {
-      const tailFrom = Math.max(head.length, file.size - 1024 * 1024);
+      const tailFrom = Math.max(head.length, file.size - (opts.light ? 256 : 1024) * 1024);
       found = merge(new TextDecoder("latin1").decode(await file.slice(tailFrom).arrayBuffer()));
-      const CH = 4 * 1024 * 1024, OV = 4096, limit = Math.min(tailFrom, 24 * 1024 * 1024);
+      const CH = 4 * 1024 * 1024, OV = 4096, limit = Math.min(tailFrom, (opts.light ? 4 : 24) * 1024 * 1024);
       for (let o = head.length - OV; !found && o < limit; o += CH) {
         found = merge(new TextDecoder("latin1").decode(await file.slice(o, Math.min(o + CH + OV, limit)).arrayBuffer()));
       }
@@ -136,10 +136,11 @@ export async function readCullTags(file: File): Promise<{ rating: number; locked
 }
 
 /** Fast read: embedded JPEG preview + culling tags, no demosaicing. */
-export async function readCull(file: File): Promise<Omit<CullItem, "id" | "file">> {
-  const tags = await readCullTags(file);
+export async function readCull(file: File, opts: { light?: boolean } = {}): Promise<Omit<CullItem, "id" | "file">> {
+  // light (mobile): tags were already read in pass 1 and the full metadata parse is skipped — thumbnail only.
+  const tags = opts.light ? { rating: 0, locked: false, flagged: false } : await readCullTags(file);
   const exifr = (await import("exifr")).default;
-  const meta = ((await withTimeout(
+  const meta = opts.light ? {} : ((await withTimeout(
     exifr.parse(file, { tiff: true, exif: true, iptc: true, xmp: true, makerNote: true, mergeOutput: true }), 4000,
   )) ?? {}) as Record<string, any>;
   let thumb: string | null = null;
