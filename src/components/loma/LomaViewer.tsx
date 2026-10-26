@@ -153,22 +153,45 @@ export function LomaViewer() {
 
   const openFile = async (file: File) => {
     let url = URL.createObjectURL(file);
-    const exifr = (await import("exifr")).default;
-    let meta: Meta = {};
-    const opts = { tiff: true, exif: true, gps: true, icc: true, iptc: true, xmp: true, makerNote: false };
-    const tryParse = async (src: Blob | ArrayBuffer) => {
-      try {
-        return ((await Promise.race([exifr.parse(src as any, opts), new Promise((r) => setTimeout(() => r(null), 5000))])) ?? {}) as Meta;
-      } catch { return {} as Meta; }
+    const isRaw = RAWLIKE.test(file.name);
+    let preview: Blob | null = null;
+    // 1) Picture first: RAW shows its embedded JPEG immediately; metadata is read afterwards.
+    if (isRaw) {
+      const { extractRawPreview } = await import("./raw-preview");
+      preview = await extractRawPreview(file, { deep: false });
+      if (!preview) preview = await extractRawPreview(file, { deep: true });
+      if (preview) url = URL.createObjectURL(preview);
+      else try {
+        const exifr0 = (await import("exifr")).default;
+        const th = await exifr0.thumbnail(file);
+        if (th) url = URL.createObjectURL(new Blob([th as BlobPart], { type: "image/jpeg" }));
+      } catch { /* keep original */ }
+    }
+    const probe = new Image();
+    probe.decoding = "async";
+    probe.onload = () => {
+      setImg({ file, url, w: probe.naturalWidth, h: probe.naturalHeight, meta: {} as Meta });
+      setAdjust(defaultAdjust);
+      setCrop(null);
+      setSel(null);
+      requestAnimationFrame(() => fit(probe.naturalWidth, probe.naturalHeight));
+      void loadMeta();
     };
-    meta = await tryParse(file);
-    if (RAWLIKE.test(file.name)) {
-      // RAW: exifr often fails (CR3) → also read the header bytes and the embedded JPEG's Exif, merging missing fields.
+    probe.onerror = () => notify("Formato non visualizzabile da questo browser.");
+    probe.src = url;
+    // 2) Metadata in background, merged into the photo only if it is still the one on screen.
+    const loadMeta = async () => {
+      const exifr = (await import("exifr")).default;
+      const opts = { tiff: true, exif: true, gps: true, icc: true, iptc: true, xmp: true, makerNote: false };
+      const tryParse = async (src: Blob | ArrayBuffer) => {
+        try {
+          return ((await Promise.race([exifr.parse(src as any, opts), new Promise((r) => setTimeout(() => r(null), 5000))])) ?? {}) as Meta;
+        } catch { return {} as Meta; }
+      };
+      let meta: Meta = await tryParse(isRaw ? file.slice(0, Math.min(file.size, 8 * 1024 * 1024)) : file);
       const merge = (extra: Meta) => { for (const [k, v] of Object.entries(extra)) if ((meta as any)[k] == null) (meta as any)[k] = v; };
-      if (!(meta as any).Model || !(meta as any).FNumber) {
+      if (isRaw && (!(meta as any).Model || !(meta as any).FNumber)) {
         const head = await file.slice(0, Math.min(file.size, 8 * 1024 * 1024)).arrayBuffer();
-        merge(await tryParse(head));
-        // CR3: camera/lens/exposure live in CMT1..CMT3 boxes, each a standalone TIFF.
         const u = new Uint8Array(head), dv = new DataView(head), txt = new TextDecoder("latin1").decode(u.subarray(0, 512 * 1024));
         for (const tag of ["CMT1", "CMT2", "CMT3"]) {
           const i = txt.indexOf(tag);
@@ -176,29 +199,10 @@ export function LomaViewer() {
           const len = dv.getUint32(i - 4) - 8;
           if (len > 8 && i + 4 + len <= u.length) merge(await tryParse(head.slice(i + 4, i + 4 + len)));
         }
+        if (preview && (!(meta as any).Model || !(meta as any).FNumber || !(meta as any).ExposureTime)) merge(await tryParse(await preview.arrayBuffer()));
       }
-      const { extractRawPreview } = await import("./raw-preview");
-      let p = await extractRawPreview(file, { deep: false });
-      if (!p) p = await extractRawPreview(file, { deep: true });
-      if (p) {
-        url = URL.createObjectURL(p);
-        if (!(meta as any).Model || !(meta as any).FNumber || !(meta as any).ExposureTime) merge(await tryParse(await p.arrayBuffer()));
-      }
-      else try {
-        const th = await exifr.thumbnail(file);
-        if (th) url = URL.createObjectURL(new Blob([th as BlobPart], { type: "image/jpeg" }));
-      } catch { /* keep original */ }
-    }
-    const probe = new Image();
-    probe.onload = () => {
-      setImg({ file, url, w: probe.naturalWidth, h: probe.naturalHeight, meta });
-      setAdjust(defaultAdjust);
-      setCrop(null);
-      setSel(null);
-      requestAnimationFrame(() => fit(probe.naturalWidth, probe.naturalHeight));
+      setImg((cur: any) => (cur && cur.file === file ? { ...cur, meta } : cur));
     };
-    probe.onerror = () => notify("Formato non visualizzabile da questo browser (metadati letti).");
-    probe.src = url;
   };
 
   // ---------- Culling session ----------
@@ -262,16 +266,34 @@ export function LomaViewer() {
       setSession((s) => s.map((x) => { const k = chunk.findIndex((c) => c.id === x.id); return k < 0 ? x : { ...x, ...res[k] }; }));
     // 1) stars / lock / flag first (only a few KB per file), so filters work right away
     const light = typeof window !== "undefined" && (window.matchMedia("(pointer: coarse)").matches || /Android|iPad|iPhone/i.test(navigator.userAgent)) && !(window as any).lomaDesktop;
+    if (light) {
+      // Tablet/phone: one pass in file order (tags + thumbnail together), 4 at a time → first photos appear in seconds.
+      let next = 0;
+      const buf: { c: CullItem; r: Partial<CullItem> }[] = [];
+      let timer: any = null;
+      const flush = () => { timer = null; const b = buf.splice(0); if (b.length) merge(b.map((x) => x.c), b.map((x) => x.r)); };
+      const worker = async () => {
+        while (next < base.length) {
+          const c = base[next++]!;
+          const [t, r] = await Promise.all([
+            readCullTags(c.file, { light }).catch(() => ({})),
+            readCull(c.file, { light }).catch(() => ({}) as Partial<CullItem>),
+          ]);
+          buf.push({ c, r: { thumb: (r as any).thumb ?? null, ...t } });
+          if (!timer) timer = setTimeout(flush, 150);
+        }
+      };
+      await Promise.all([worker(), worker(), worker(), worker()]);
+      flush();
+      return;
+    }
     for (let i = 0; i < base.length; i += 12) {
       const chunk = base.slice(i, i + 12);
-      merge(chunk, await Promise.all(chunk.map((c) => readCullTags(c.file, { light }).catch(() => ({})))));
+      merge(chunk, await Promise.all(chunk.map((c) => readCullTags(c.file).catch(() => ({})))));
     }
-    // 2) thumbnails in small parallel batches (one slow file never blocks the others' tags)
     for (let i = 0; i < base.length; i += 6) {
       const chunk = base.slice(i, i + 6);
-      const res = await Promise.all(chunk.map((c) => readCull(c.file, { light }).catch(() => ({}) as Partial<CullItem>)));
-      if (light) res.forEach((r) => { delete (r as any).rating; delete (r as any).locked; delete (r as any).flagged; });
-      merge(chunk, res);
+      merge(chunk, await Promise.all(chunk.map((c) => readCull(c.file).catch(() => ({}) as Partial<CullItem>))));
     }
   };
 
