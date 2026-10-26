@@ -22,7 +22,7 @@ import { ComparePane } from "./ComparePane";
 import { MailChoice, WEBMAIL_PRESETS } from "./MailChoice";
 import { ContactSheet } from "./ContactSheet";
 import { ProvenancePanel } from "./ProvenancePanel";
-import { type CullItem, type CullFilter, IMAGE_RE, readCull, applyFilter } from "./culling";
+import { type CullItem, type CullFilter, IMAGE_RE, readCull, readCullTags, applyFilter } from "./culling";
 import { developCanvas, autoMeasure } from "./develop";
 
 type Meta = Record<string, any>;
@@ -234,11 +234,18 @@ export function LomaViewer() {
     setCurId(base[0]!.id);
     openFile(base[0]!.file);
     notify(`Importate ${files.length} foto.`);
-    // read previews + in-camera tags in small parallel batches
+    const merge = (chunk: CullItem[], res: Partial<CullItem>[]) =>
+      setSession((s) => s.map((x) => { const k = chunk.findIndex((c) => c.id === x.id); return k < 0 ? x : { ...x, ...res[k] }; }));
+    // 1) stars / lock / flag first (only a few KB per file), so filters work right away
+    for (let i = 0; i < base.length; i += 12) {
+      const chunk = base.slice(i, i + 12);
+      merge(chunk, await Promise.all(chunk.map((c) => readCullTags(c.file).catch(() => ({})))));
+    }
+    // 2) thumbnails in small parallel batches (one slow file never blocks the others' tags)
     for (let i = 0; i < base.length; i += 6) {
       const chunk = base.slice(i, i + 6);
-      const res = await Promise.all(chunk.map((c) => readCull(c.file)));
-      setSession((s) => s.map((x) => { const k = chunk.findIndex((c) => c.id === x.id); return k < 0 ? x : { ...x, ...res[k] }; }));
+      const res = await Promise.all(chunk.map((c) => readCull(c.file).catch(() => ({}) as Partial<CullItem>)));
+      merge(chunk, res);
     }
   };
 
