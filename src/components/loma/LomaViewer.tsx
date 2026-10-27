@@ -356,16 +356,34 @@ export function LomaViewer() {
     const receive = async (raw: unknown) => {
       try {
         if (!raw) return;
-        const list = (typeof raw === "string" ? JSON.parse(raw) : raw) as { name: string; type?: string; data: string }[] | null;
+        const list = (typeof raw === "string" ? JSON.parse(raw) : raw) as { id?: string; name: string; type?: string; size?: number; data?: string }[] | null;
         if (!Array.isArray(list) || list.length === 0) return;
-        const files: File[] = [];
-        for (const f of list) {
-          if (!f?.data) continue;
-          const bin = atob(f.data);
+        const tid = sonnerToast.loading(list.length === 1 ? "Caricamento immagine da Galleria..." : `Caricamento ${list.length} immagini...`);
+        const b64 = (s: string) => {
+          const bin = atob(s);
           const bytes = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          files.push(new File([bytes], f.name || "condivisa.jpg", { type: f.type || "" }));
+          return bytes;
+        };
+        const files: File[] = [];
+        const bridge = w.LomaAndroid;
+        for (const f of list) {
+          try {
+            if (f?.data) { files.push(new File([b64(f.data)], f.name || "condivisa.jpg", { type: f.type || "" })); continue; }
+            if (!f?.id || !bridge?.getFileChunk || !f.size) continue;
+            const CH = 512 * 1024;
+            const parts: Uint8Array[] = [];
+            for (let off = 0; off < f.size; off += CH) {
+              const chunk = bridge.getFileChunk(f.id, off, Math.min(CH, f.size - off)) as string;
+              if (!chunk) break;
+              parts.push(b64(chunk));
+              if (parts.length % 8 === 0) await new Promise((r) => setTimeout(r, 0));
+            }
+            files.push(new File(parts as BlobPart[], f.name || "condivisa.jpg", { type: f.type || "" }));
+            try { bridge.releaseFile?.(f.id); } catch { /* ignore */ }
+          } catch (e) { console.warn("shared file read failed", e); }
         }
+        sonnerToast.dismiss(tid);
         if (files.length === 0) return;
         if (files.length === 1 && files[0]) await openRef.current(files[0]);
         else {
