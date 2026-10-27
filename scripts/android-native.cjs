@@ -22,7 +22,10 @@ import android.webkit.WebView;
 import com.getcapacitor.BridgeWebViewClient;
 import android.webkit.JavascriptInterface;
 import com.getcapacitor.BridgeActivity;
-import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -36,6 +39,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        cleanCache();
         WebView wv = getBridge().getWebView();
         wv.addJavascriptInterface(new Bridge(), "LomaAndroid");
         wv.setWebViewClient(new BridgeWebViewClient(getBridge()) {
@@ -115,25 +119,51 @@ public class MainActivity extends BridgeActivity {
         intent.removeExtra(Intent.EXTRA_STREAM);
     }
 
+    private File cacheDir() {
+        File d = new File(getCacheDir(), "shared_photos");
+        if (!d.exists()) d.mkdirs();
+        return d;
+    }
+
+    // Removes files left over from previous sessions so the device doesn't fill up.
+    private void cleanCache() {
+        File[] old = cacheDir().listFiles();
+        if (old != null) for (File f : old) f.delete();
+    }
+
+    private int seq = 0;
+
+    // Streams the Uri straight to cache (no full-file Base64 in RAM); JS later reads it in chunks.
     private JSONObject read(Uri u) {
         try (InputStream in = getContentResolver().openInputStream(u)) {
             if (in == null) return null;
-            ByteArrayOutputStream bo = new ByteArrayOutputStream();
-            byte[] buf = new byte[1 << 16];
-            int n;
-            while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
-            Log.i(TAG, "letto " + u + " byte=" + bo.size());
+            String name = nameOf(u);
+            String safe = name.replaceAll("[^A-Za-z0-9._-]", "_");
+            String id = String.valueOf(++seq);
+            File out = new File(cacheDir(), "shared_" + System.currentTimeMillis() + "_" + id + "_" + safe);
+            long total = 0;
+            try (OutputStream os = new FileOutputStream(out)) {
+                byte[] buf = new byte[1 << 16];
+                int n;
+                while ((n = in.read(buf)) > 0) { os.write(buf, 0, n); total += n; }
+            }
+            Log.i(TAG, "copiato " + u + " -> " + out.getName() + " byte=" + total);
             JSONObject o = new JSONObject();
-            o.put("name", nameOf(u));
+            o.put("id", id);
+            o.put("name", name);
             String t = getContentResolver().getType(u);
             o.put("type", t != null ? t : "");
-            o.put("data", Base64.encodeToString(bo.toByteArray(), Base64.NO_WRAP));
+            o.put("size", total);
+            o.put("path", out.getAbsolutePath());
+            synchronized (cached) { cached.put(id, out); }
             return o;
         } catch (Exception e) {
-            Log.e(TAG, "lettura fallita " + u, e);
+            Log.e(TAG, "copia fallita " + u, e);
             return null;
         }
     }
+
+    private final java.util.HashMap<String, File> cached = new java.util.HashMap<>();
 
     private String nameOf(Uri u) {
         if ("content".equals(u.getScheme())) {
@@ -158,6 +188,38 @@ public class MainActivity extends BridgeActivity {
                 Log.i(TAG, "takeFiles: " + out.length() + " file");
                 return out.toString();
             }
+        }
+
+        @JavascriptInterface
+        public String getFileList() {
+            synchronized (readyFiles) {
+                JSONArray out = new JSONArray();
+                for (JSONObject o : readyFiles) out.put(o);
+                return out.toString();
+            }
+        }
+
+        @JavascriptInterface
+        public String getFileChunk(String id, int offset, int length) {
+            File f;
+            synchronized (cached) { f = cached.get(id); }
+            if (f == null || length <= 0) return "";
+            try (RandomAccessFile r = new RandomAccessFile(f, "r")) {
+                r.seek(offset);
+                byte[] b = new byte[(int) Math.min(length, Math.max(0, r.length() - offset))];
+                r.readFully(b);
+                return Base64.encodeToString(b, Base64.NO_WRAP);
+            } catch (Exception e) {
+                Log.e(TAG, "chunk fallito " + id, e);
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public void releaseFile(String id) {
+            File f;
+            synchronized (cached) { f = cached.remove(id); }
+            if (f != null) f.delete();
         }
     }
 }
