@@ -5,7 +5,23 @@ const path = require("path");
 const file = path.join(__dirname, "..", "android", "app", "src", "main", "AndroidManifest.xml");
 if (!fs.existsSync(file)) { console.log("android/ non trovato: esegui prima `npx cap add android`"); process.exit(0); }
 let xml = fs.readFileSync(file, "utf8");
-if (xml.includes("loma-intents")) { console.log("Intent filter già presenti"); process.exit(0); }
+// Activity attributes + permissions are enforced every run (idempotent).
+xml = xml.replace(/<activity\b[^>]*MainActivity[^>]*>/, (tag) => {
+  let t = tag;
+  t = /android:launchMode="[^"]*"/.test(t) ? t.replace(/android:launchMode="[^"]*"/, 'android:launchMode="singleTask"') : t.replace("<activity", '<activity android:launchMode="singleTask"');
+  t = /android:exported="[^"]*"/.test(t) ? t.replace(/android:exported="[^"]*"/, 'android:exported="true"') : t.replace("<activity", '<activity android:exported="true"');
+  return t;
+});
+const perms = [
+  '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />',
+  '<uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />',
+  '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />',
+];
+for (const p of perms) {
+  const name = p.match(/name="([^"]+)"/)[1];
+  if (!xml.includes(`"${name}"`)) xml = xml.replace("</manifest>", `    ${p}\n</manifest>`);
+}
+if (xml.includes("loma-intents")) { fs.writeFileSync(file, xml); console.log("Intent filter già presenti, attività e permessi aggiornati"); process.exit(0); }
 const raw = ["image/x-canon-cr2", "image/x-canon-cr3", "image/x-nikon-nef", "image/x-sony-arw", "image/x-panasonic-rw2", "image/x-olympus-orf", "image/x-adobe-dng", "image/tiff"];
 const ext = ["dng", "cr2", "cr3", "nef", "arw", "rw2", "orf", "tif", "tiff"];
 const filters = `
@@ -34,9 +50,6 @@ ${raw.map((m) => `                <data android:mimeType="${m}" />`).join("\n")}
 ${ext.map((e) => `                <data android:pathPattern=".*\\\\.${e}" />`).join("\n")}
             </intent-filter>
 `;
-xml = xml.replace(/(<activity[\s\S]*?MainActivity[\s\S]*?>)/, `$1${filters}`);
-if (!xml.includes("READ_MEDIA_IMAGES")) {
-  xml = xml.replace("</manifest>", `    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n</manifest>`);
-}
+xml = xml.replace(/(<activity\b[^>]*MainActivity[^>]*>)/, `$1${filters}`);
 fs.writeFileSync(file, xml);
 console.log("Intent filter SEND/VIEW aggiunti ad AndroidManifest.xml");

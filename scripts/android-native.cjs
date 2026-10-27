@@ -17,6 +17,9 @@ import android.os.Bundle;
 import android.os.Parcelable;
 import android.provider.OpenableColumns;
 import android.util.Base64;
+import android.util.Log;
+import android.webkit.WebView;
+import com.getcapacitor.BridgeWebViewClient;
 import android.webkit.JavascriptInterface;
 import com.getcapacitor.BridgeActivity;
 import java.io.ByteArrayOutputStream;
@@ -33,8 +36,37 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getBridge().getWebView().addJavascriptInterface(new Bridge(), "LomaAndroid");
+        WebView wv = getBridge().getWebView();
+        wv.addJavascriptInterface(new Bridge(), "LomaAndroid");
+        wv.setWebViewClient(new BridgeWebViewClient(getBridge()) {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                Log.i(TAG, "pagina caricata: " + url);
+                pushToJs();
+            }
+        });
         handleIntent(getIntent());
+    }
+
+    private static final String TAG = "LomaAndroid";
+
+    // Pushes pending files to window.__lomaReceiveSharedFiles (cold start + onNewIntent); polling still works.
+    private void pushToJs() {
+        runOnUiThread(() -> {
+            String json;
+            synchronized (readyFiles) {
+                if (readyFiles.isEmpty()) return;
+                JSONArray out = new JSONArray();
+                for (JSONObject o : readyFiles) out.put(o);
+                json = out.toString();
+            }
+            String js = "(function(j){if(window.__lomaReceiveSharedFiles){window.__lomaReceiveSharedFiles(j);return 'ok';}return 'wait';})(" + JSONObject.quote(json) + ")";
+            getBridge().getWebView().evaluateJavascript(js, res -> {
+                Log.i(TAG, "push a JS: " + res);
+                if (res != null && res.contains("ok")) synchronized (readyFiles) { readyFiles.clear(); }
+            });
+        });
     }
 
     @Override
@@ -42,12 +74,14 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         handleIntent(intent);
-        runOnUiThread(() -> getBridge().getWebView().evaluateJavascript(
-            "window.__lomaAndroidFiles && window.__lomaAndroidFiles()", null));
+        pushToJs();
     }
 
     private void handleIntent(Intent intent) {
         if (intent == null) return;
+        String action = intent.getAction();
+        Log.i(TAG, "intent ricevuto, action=" + action + " type=" + intent.getType());
+        if (!Intent.ACTION_SEND.equals(action) && !Intent.ACTION_SEND_MULTIPLE.equals(action) && !Intent.ACTION_VIEW.equals(action)) return;
         LinkedHashSet<Uri> uris = new LinkedHashSet<>();
         ClipData clip = intent.getClipData();
         if (clip != null) {
@@ -67,7 +101,11 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception ignored) {}
         }
         if (intent.getData() != null) uris.add(intent.getData());
+        Log.i(TAG, "uri trovati: " + uris.size());
         for (Uri u : uris) {
+            try {
+                getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Exception e) { Log.i(TAG, "permesso persistente non disponibile per " + u); }
             JSONObject o = read(u);
             if (o != null) synchronized (readyFiles) { readyFiles.add(o); }
         }
@@ -84,6 +122,7 @@ public class MainActivity extends BridgeActivity {
             byte[] buf = new byte[1 << 16];
             int n;
             while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+            Log.i(TAG, "letto " + u + " byte=" + bo.size());
             JSONObject o = new JSONObject();
             o.put("name", nameOf(u));
             String t = getContentResolver().getType(u);
@@ -91,6 +130,7 @@ public class MainActivity extends BridgeActivity {
             o.put("data", Base64.encodeToString(bo.toByteArray(), Base64.NO_WRAP));
             return o;
         } catch (Exception e) {
+            Log.e(TAG, "lettura fallita " + u, e);
             return null;
         }
     }
@@ -115,6 +155,7 @@ public class MainActivity extends BridgeActivity {
                 JSONArray out = new JSONArray();
                 for (JSONObject o : readyFiles) out.put(o);
                 readyFiles.clear();
+                Log.i(TAG, "takeFiles: " + out.length() + " file");
                 return out.toString();
             }
         }
