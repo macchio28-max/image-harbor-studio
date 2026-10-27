@@ -9,7 +9,7 @@ import { VitePWA } from "vite-plugin-pwa";
 
 // LOMA_TARGET=android builds a static SPA shell (dist/client/index.html) for the Capacitor APK.
 // The normal web deploy (no env var) is unchanged: SSR on the edge.
-const android = process.env.LOMA_TARGET === "android";
+const android = process.env["LOMA_TARGET"] === "android";
 
 export default defineConfig({
   tanstackStart: {
