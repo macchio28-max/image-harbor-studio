@@ -28,7 +28,27 @@ jobs:
       - name: Install
         run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: Build web assets (static SPA)
-        run: npm run build:android
+        run: |
+          npm run build:android
+          # Find the generated HTML output and guarantee dist/client/index.html
+          SRC=""
+          for d in dist/client .output/public dist; do
+            if [ -f "$d/index.html" ]; then SRC="$d"; break; fi
+          done
+          if [ -z "$SRC" ]; then
+            echo "No index.html found in dist/client, .output/public or dist" >&2
+            ls -la dist .output/public 2>/dev/null || true
+            exit 1
+          fi
+          echo "Web output found in: $SRC"
+          if [ "$SRC" != "dist/client" ]; then
+            TMP=$(mktemp -d)
+            cp -R "$SRC"/. "$TMP"/
+            mkdir -p dist/client
+            cp -R "$TMP"/. dist/client/
+          fi
+          ls -la dist/client
+          test -f dist/client/index.html
       - name: Add Android platform (android/ is generated, not committed)
         run: "[ -d android ] || npx cap add android"
       - name: Sync + patch native project
