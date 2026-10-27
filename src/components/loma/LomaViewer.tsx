@@ -174,7 +174,7 @@ export function LomaViewer() {
     probe.onload = () => {
       setImg({ file, url, w: probe.naturalWidth, h: probe.naturalHeight, meta: {} as Meta });
       setAdjust(defaultAdjust);
-      setCrop(null);
+      setCrop(null); setCropping(false);
       setSel(null);
       requestAnimationFrame(() => fit(probe.naturalWidth, probe.naturalHeight));
       void loadMeta();
@@ -899,7 +899,7 @@ export function LomaViewer() {
   const startCrop = () => {
     if (!img) return;
     setCropping(true); setMode("select");
-    setSel(crop ? { ...crop } : { x: img.w * 0.1, y: img.h * 0.1, w: img.w * 0.8, h: img.h * 0.8 });
+    setSel((cur) => cur && cur.w > 4 ? cur : crop ? { ...crop } : { x: img.w * 0.1, y: img.h * 0.1, w: img.w * 0.8, h: img.h * 0.8 });
   };
   const cancelCrop = () => { setCropping(false); setSel(null); };
   const applyCrop = () => {
@@ -1131,7 +1131,7 @@ export function LomaViewer() {
               )}
               {sel && (
                 <div
-                  className={`pointer-events-none absolute border-2 border-dashed border-primary ${cropping ? "shadow-[0_0_0_9999px_hsl(0_0%_0%/0.55)]" : "bg-primary/10"}`}
+                  className={`pointer-events-none absolute border-2 border-dashed border-primary ${cropping ? "shadow-[0_0_0_9999px_color-mix(in_oklab,var(--background)_65%,transparent)]" : "bg-primary/10"}`}
                   style={{ left: off.x + sel.x * scale, top: off.y + sel.y * scale, width: sel.w * scale, height: sel.h * scale }}
                 />
               )}
