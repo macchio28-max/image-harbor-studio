@@ -355,26 +355,31 @@ export function LomaViewer() {
     if (!bridge?.takeFiles) return;
     const pull = async () => {
       try {
-        const list = JSON.parse(bridge.takeFiles() || "[]") as { name: string; type?: string; data: string }[];
-        const files = list.map((f) => {
+        const raw = bridge.takeFiles();
+        if (!raw) return;
+        const list = JSON.parse(raw) as { name: string; type?: string; data: string }[] | null;
+        if (!Array.isArray(list) || list.length === 0) return;
+        const dt = new DataTransfer();
+        for (const f of list) {
+          if (!f?.data) continue;
           const bin = atob(f.data);
           const bytes = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          return new File([bytes], f.name, { type: f.type || "" });
-        });
-        if (files.length === 1 && files[0]) await openRef.current(files[0]);
-        else if (files.length > 1) {
-          const dt = new DataTransfer();
-          files.forEach((f) => dt.items.add(f));
-          importRef.current(dt.files);
+          dt.items.add(new File([bytes], f.name || "condivisa.jpg", { type: f.type || "" }));
         }
+        if (dt.files.length > 0) importRef.current(dt.files);
       } catch (e) {
         console.warn("Android shared files load failed", e);
       }
     };
     (window as any).__lomaAndroidFiles = pull;
     pull();
-    return () => { delete (window as any).__lomaAndroidFiles; };
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      if (Date.now() - started > 5000) { window.clearInterval(timer); return; }
+      pull();
+    }, 500);
+    return () => { window.clearInterval(timer); delete (window as any).__lomaAndroidFiles; };
   }, []);
 
   const clearCache = async () => {
