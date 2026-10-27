@@ -367,13 +367,13 @@ export function LomaViewer() {
           files.push(new File([bytes], f.name || "condivisa.jpg", { type: f.type || "" }));
         }
         if (files.length === 0) return;
-        if (files.length === 1) await openRef.current(files[0]);
+        if (files.length === 1 && files[0]) await openRef.current(files[0]);
         else {
           const dt = new DataTransfer();
           files.forEach((f) => dt.items.add(f));
           importRef.current(dt.files);
         }
-        toast.success(files.length === 1 ? "Immagine ricevuta" : `${files.length} immagini ricevute`, { duration: 1000 });
+        sonnerToast.success(files.length === 1 ? "Immagine ricevuta" : `${files.length} immagini ricevute`, { duration: 1000 });
       } catch (e) {
         console.warn("Android shared files load failed", e);
       }
