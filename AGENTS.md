@@ -11,3 +11,5 @@
 - Offline support uses vite-plugin-pwa (generateSW) registered only via src/lib/register-sw.ts, which refuses dev/preview hosts — prevents stale preview caches.
 - Desktop cache clearing (Electron `loma:clearCache`) may delete only exported-photo temp files and Chromium's volatile network cache; never call clearStorageData on serviceworkers/cachestorage — the offline copy of the app lives there and must survive a clean-up pressed while offline.
 - Google Drive/OneDrive buttons never use cloud APIs/OAuth: on desktop they copy the photo into the folder synced by the vendor's desktop app (auto-detected, user-confirmed, remembered); in browsers they fall back to the save dialog — user rejected API integration.
+
+- Android APK uses Capacitor loading the published URL (server.url), like Electron, because the SSR build has no static index.html; intent filters are injected by scripts/android-intents.cjs after cap add/sync since android/ is generated.

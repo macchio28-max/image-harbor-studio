@@ -1,0 +1,42 @@
+// Adds SEND / SEND_MULTIPLE (Share menu) and VIEW ("Apri con...") image intent filters
+// to the generated android/app/src/main/AndroidManifest.xml. Idempotent; run after `cap add/sync`.
+const fs = require("fs");
+const path = require("path");
+const file = path.join(__dirname, "..", "android", "app", "src", "main", "AndroidManifest.xml");
+if (!fs.existsSync(file)) { console.log("android/ non trovato: esegui prima `npx cap add android`"); process.exit(0); }
+let xml = fs.readFileSync(file, "utf8");
+if (xml.includes("loma-intents")) { console.log("Intent filter già presenti"); process.exit(0); }
+const raw = ["image/x-canon-cr2", "image/x-canon-cr3", "image/x-nikon-nef", "image/x-sony-arw", "image/x-panasonic-rw2", "image/x-olympus-orf", "image/x-adobe-dng", "image/tiff"];
+const ext = ["dng", "cr2", "cr3", "nef", "arw", "rw2", "orf", "tif", "tiff"];
+const filters = `
+            <!-- loma-intents -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="image/*" />
+${raw.map((m) => `                <data android:mimeType="${m}" />`).join("\n")}
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="application/octet-stream" />
+${ext.map((e) => `                <data android:pathPattern=".*\\\\.${e}" />`).join("\n")}
+            </intent-filter>
+`;
+xml = xml.replace(/(<activity[\s\S]*?MainActivity[\s\S]*?>)/, `$1${filters}`);
+if (!xml.includes("READ_MEDIA_IMAGES")) {
+  xml = xml.replace("</manifest>", `    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n</manifest>`);
+}
+fs.writeFileSync(file, xml);
+console.log("Intent filter SEND/VIEW aggiunti ad AndroidManifest.xml");
