@@ -16,8 +16,8 @@
     "electron:build": "electron-builder --win --mac",
     "electron:build:win": "electron-builder --win",
     "electron:build:mac": "electron-builder --mac",
-    "android:add": "cap add android && node scripts/android-intents.cjs",
-    "android:sync": "cap sync android && node scripts/android-intents.cjs",
+    "android:add": "cap add android && node scripts/android-intents.cjs && node scripts/android-native.cjs && node scripts/android-icons.cjs",
+    "android:sync": "cap sync android && node scripts/android-intents.cjs && node scripts/android-native.cjs && node scripts/android-icons.cjs",
     "android:open": "cap open android"
   },
   "overrides": {
