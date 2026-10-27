@@ -349,37 +349,50 @@ export function LomaViewer() {
     })();
   }, []);
 
-  // Android APK: images received via Share / "Apri con" are handed over by MainActivity (LomaAndroid bridge).
+  // Android APK: images received via Share / "Apri con" are handed over by MainActivity (LomaAndroid bridge):
+  // pushed via window.__lomaReceiveSharedFiles(json) and also pulled via LomaAndroid.takeFiles().
   useEffect(() => {
-    const bridge = (window as any).LomaAndroid;
-    if (!bridge?.takeFiles) return;
-    const pull = async () => {
+    const w = window as any;
+    const receive = async (raw: unknown) => {
       try {
-        const raw = bridge.takeFiles();
         if (!raw) return;
-        const list = JSON.parse(raw) as { name: string; type?: string; data: string }[] | null;
+        const list = (typeof raw === "string" ? JSON.parse(raw) : raw) as { name: string; type?: string; data: string }[] | null;
         if (!Array.isArray(list) || list.length === 0) return;
-        const dt = new DataTransfer();
+        const files: File[] = [];
         for (const f of list) {
           if (!f?.data) continue;
           const bin = atob(f.data);
           const bytes = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          dt.items.add(new File([bytes], f.name || "condivisa.jpg", { type: f.type || "" }));
+          files.push(new File([bytes], f.name || "condivisa.jpg", { type: f.type || "" }));
         }
-        if (dt.files.length > 0) importRef.current(dt.files);
+        if (files.length === 0) return;
+        if (files.length === 1) await openRef.current(files[0]);
+        else {
+          const dt = new DataTransfer();
+          files.forEach((f) => dt.items.add(f));
+          importRef.current(dt.files);
+        }
+        toast.success(files.length === 1 ? "Immagine ricevuta" : `${files.length} immagini ricevute`, { duration: 1000 });
       } catch (e) {
         console.warn("Android shared files load failed", e);
       }
     };
-    (window as any).__lomaAndroidFiles = pull;
+    const pull = () => {
+      const bridge = w.LomaAndroid;
+      if (!bridge?.takeFiles) return;
+      try { receive(bridge.takeFiles()); } catch (e) { console.warn(e); }
+    };
+    w.__lomaReceiveSharedFiles = receive;
+    w.__lomaAndroidFiles = pull;
+    if (!w.LomaAndroid?.takeFiles) return () => { delete w.__lomaReceiveSharedFiles; delete w.__lomaAndroidFiles; };
     pull();
     const started = Date.now();
     const timer = window.setInterval(() => {
       if (Date.now() - started > 5000) { window.clearInterval(timer); return; }
       pull();
     }, 500);
-    return () => { window.clearInterval(timer); delete (window as any).__lomaAndroidFiles; };
+    return () => { window.clearInterval(timer); delete w.__lomaAndroidFiles; delete w.__lomaReceiveSharedFiles; };
   }, []);
 
   const clearCache = async () => {
