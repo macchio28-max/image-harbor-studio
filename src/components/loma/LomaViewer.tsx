@@ -1,3 +1,4 @@
+import { androidShare } from "./android-share";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Save, MousePointer2, Hand, ZoomIn, ZoomOut, Columns2, SlidersHorizontal, Camera, Eraser,
@@ -43,6 +44,7 @@ export function LomaViewer() {
   const [mode, setMode] = useState<Mode>("move");
   const [adjust, setAdjust] = useState<Adjust>(defaultAdjust);
   const [crop, setCrop] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [cropping, setCropping] = useState(false);
   const [sel, setSel] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [compare, setCompare] = useState(false);
   const [active, setActive] = useState<"A" | "B">("A");
@@ -172,7 +174,7 @@ export function LomaViewer() {
     probe.onload = () => {
       setImg({ file, url, w: probe.naturalWidth, h: probe.naturalHeight, meta: {} as Meta });
       setAdjust(defaultAdjust);
-      setCrop(null);
+      setCrop(null); setCropping(false);
       setSel(null);
       requestAnimationFrame(() => fit(probe.naturalWidth, probe.naturalHeight));
       void loadMeta();
@@ -721,6 +723,7 @@ export function LomaViewer() {
     if (img && imgEl.current) {
       const b = await renderClean(imgEl.current, adjust, crop, "image/png");
       const f = new File([b], `${baseName(img.file.name)}.png`, { type: "image/png" });
+      if (await androidShare(f)) return;
       if (navigator.canShare?.({ files: [f] })) {
         try { await navigator.share({ files: [f], title: "LoMa VIEWER" }); return; } catch { return; }
       }
@@ -759,6 +762,7 @@ export function LomaViewer() {
       }
       const desk = (window as any).lomaDesktop;
       if (desk?.shareFile && desk.platform === "darwin") { const r = await desk.shareFile(f, f.name); if (r?.ok) return; }
+      if (await androidShare(f)) return;
       if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f], title: f.name }); return; }
       download(f, f.name);
       notify("Condivisione non supportata qui: foto scaricata.");
@@ -788,7 +792,8 @@ export function LomaViewer() {
           } catch (e: any) { if (e?.name !== "AbortError") notify("Salvataggio non riuscito."); }
           return;
         }
-        if (navigator.canShare?.({ files: [f] })) { try { await navigator.share({ files: [f], title: f.name }); } catch { /* annullato */ } return; }
+        if (await androidShare(f)) return;
+      if (navigator.canShare?.({ files: [f] })) { try { await navigator.share({ files: [f], title: f.name }); } catch { /* annullato */ } return; }
         download(f, f.name);
         notify(`Spostalo nella cartella di ${target}.`);
         return;
@@ -829,7 +834,8 @@ export function LomaViewer() {
         return;
       } catch (e: any) { if (e?.name === "AbortError") { notify("Salvataggio annullato."); return; } }
     }
-    if (navigator.canShare?.({ files: [f] })) {
+    if (await androidShare(f)) return;
+      if (navigator.canShare?.({ files: [f] })) {
       try { await navigator.share({ files: [f], title: f.name }); notify(`Inviato a ${target}.`); return; } catch { notify("Salvataggio annullato."); return; }
     }
     download(f, f.name);
@@ -843,6 +849,7 @@ export function LomaViewer() {
       // Tablet/mobile: hand the file to the OS share sheet ("Apri in Lightroom", ...).
       const b = await renderClean(imgEl.current!, adjust, crop, "image/png");
       const f = new File([b], `${baseName(img!.file.name)}.png`, { type: "image/png" });
+      if (await androidShare(f)) return;
       if (navigator.canShare?.({ files: [f] })) {
         try { await navigator.share({ files: [f], title: f.name }); } catch { /* annullato */ }
         return;
@@ -889,12 +896,17 @@ export function LomaViewer() {
     notify(path ? `Esportato. Aprilo con ${app} (${path}).` : `Esportato per ${app}. Imposta il percorso in "Percorsi".`);
   };
 
+  const startCrop = () => {
+    if (!img) return;
+    setCropping(true); setMode("select");
+    setSel((cur) => cur && cur.w > 4 ? cur : crop ? { ...crop } : { x: img.w * 0.1, y: img.h * 0.1, w: img.w * 0.8, h: img.h * 0.8 });
+  };
+  const cancelCrop = () => { setCropping(false); setSel(null); };
   const applyCrop = () => {
-    if (!sel || sel.w < 4 || sel.h < 4) return notify("Disegna una selezione con lo strumento Seleziona.");
-    const base = crop ?? { x: 0, y: 0 };
-    setCrop({ x: base.x + sel.x, y: base.y + sel.y, w: sel.w, h: sel.h });
-    setSel(null);
-    notify("Ritaglio applicato all'esportazione.");
+    if (!sel || sel.w < 4 || sel.h < 4) { startCrop(); notify("Trascina sulla foto per scegliere l'area, poi premi Applica."); return; }
+    setCrop({ x: Math.round(sel.x), y: Math.round(sel.y), w: Math.round(sel.w), h: Math.round(sel.h) });
+    setSel(null); setCropping(false); setMode("move");
+    notify("Ritaglio applicato.");
   };
 
   const m: any = img?.meta ?? {};
@@ -1005,8 +1017,8 @@ export function LomaViewer() {
           <DevelopPanel
             adjust={adjust} setAdjust={setAdjust} hist={hist} hasImage={!!img}
             onAutoWb={autoWb} onAutoExposure={autoExposure}
-            onAspect={aspectSel} onApplyCrop={applyCrop} onResetCrop={() => { setCrop(null); setSel(null); }}
-            onResetAll={() => { setAdjust(defaultAdjust); setCrop(null); setSel(null); }}
+            onAspect={aspectSel} onApplyCrop={() => (cropping ? applyCrop() : startCrop())} onResetCrop={() => { setCrop(null); setSel(null); setCropping(false); }}
+            onResetAll={() => { setAdjust(defaultAdjust); setCrop(null); setSel(null); setCropping(false); }}
             onClose={() => setToolsOpen(false)}
           />
         )}
@@ -1096,10 +1108,10 @@ export function LomaViewer() {
           ) : (
             <>
               <div className="absolute inset-0" >
-                <img src={img.url} alt="" draggable={false} className="absolute left-0 top-0 max-w-none" style={imgStyle(false)} />
+                <img src={img.url} alt="" draggable={false} className="absolute left-0 top-0 max-w-none" style={{ ...imgStyle(false), ...(crop && !cropping ? { visibility: "hidden" } : {}) }} />
               </div>
               <div className="absolute inset-0" >
-                <div className="absolute left-0 top-0" style={{ width: img.w, height: img.h, transformOrigin: "0 0", transform }}>
+                <div className="absolute left-0 top-0" style={{ width: img.w, height: img.h, transformOrigin: "0 0", transform, clipPath: crop && !cropping ? `inset(${crop.y}px ${img.w - crop.x - crop.w}px ${img.h - crop.y - crop.h}px ${crop.x}px)` : undefined }}>
                   <div style={rotStyle}>
                     <img ref={imgEl} src={img.url} alt={img.file.name} draggable={false} onLoad={() => setImgReady((n) => n + 1)} className={isNeutral(adjust) ? "block max-w-none" : "hidden"} style={{ width: img.w, height: img.h, imageRendering: scale >= 2 ? "pixelated" : "auto" }} />
                     <canvas ref={preview} aria-label={img.file.name} style={{ display: isNeutral(adjust) ? "none" : "block", width: img.w, height: img.h, imageRendering: scale >= 2 ? "pixelated" : "auto" }} />
@@ -1109,9 +1121,17 @@ export function LomaViewer() {
               {compare && (
                 <span className="absolute left-2 top-2 z-20 rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground">{active} · attiva · {img.file.name}</span>
               )}
+              {cropping && (
+                <div onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
+                  className="no-drag absolute bottom-12 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-popover/95 p-2 text-sm shadow-lg">
+                  <span className="px-1 text-muted-foreground">Trascina sulla foto per l'area</span>
+                  <button onClick={applyCrop} className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground">Applica ritaglio</button>
+                  <button onClick={cancelCrop} className="rounded-md bg-secondary px-3 py-2">Annulla</button>
+                </div>
+              )}
               {sel && (
                 <div
-                  className="pointer-events-none absolute border-2 border-dashed border-primary bg-primary/10"
+                  className={`pointer-events-none absolute border-2 border-dashed border-primary ${cropping ? "shadow-[0_0_0_9999px_color-mix(in_oklab,var(--background)_65%,transparent)]" : "bg-primary/10"}`}
                   style={{ left: off.x + sel.x * scale, top: off.y + sel.y * scale, width: sel.w * scale, height: sel.h * scale }}
                 />
               )}
