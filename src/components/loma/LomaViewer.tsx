@@ -6,7 +6,8 @@ import {
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
   FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, Repeat, LayoutGrid, Square, Printer, Share2,
 } from "lucide-react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Undo2, Redo2 } from "lucide-react";
+import { type History, startHistory, commit, undo, redo } from "./edit-history";
 import { toast as sonnerToast } from "sonner";
 import { ConvertDialog } from "./ConvertDialog";
 import { PrintDialog } from "./PrintDialog";
@@ -472,7 +473,7 @@ export function LomaViewer() {
     histRef.current = h; restoring.current = true;
     setAdjust(h.present.adjust); setCrop(h.present.crop); setSel(null); setCropping(false);
     setHistTick((x) => x + 1);
-    notify(dir < 0 ? "Annullato" : "Ripristinato", 1000);
+    sonnerToast(dir < 0 ? "Modifica annullata" : "Modifica ripristinata", { duration: QUICK_MS });
   };
   void histTick;
   const pendingEdit = JSON.stringify({ adjust, crop }) !== JSON.stringify(histRef.current.present);
@@ -1003,6 +1004,8 @@ export function LomaViewer() {
           <Tool icon={<SlidersHorizontal className="text-primary" />} label="Sviluppo" tip="Pannello strumenti di sviluppo" active={toolsOpen} onClick={() => setToolsOpen((o) => !o)} />
           <Tool icon={<Camera />} label="Cattura" tip="Screenshot a risoluzione nativa" onClick={screenshot} />
           <Tool icon={<Eraser className="text-chart-3" />} label="Pulisci" tip="Rimuovi tutti i metadati" onClick={deepClean} />
+          <div className={canUndo ? "" : "pointer-events-none opacity-40"}><Tool icon={<Undo2 />} label="Annulla" tip="Annulla ultima modifica (Ctrl/⌘+Z)" onClick={() => travel(-1)} /></div>
+          <div className={canRedo ? "" : "pointer-events-none opacity-40"}><Tool icon={<Redo2 />} label="Ripeti" tip="Ripeti modifica (Ctrl+Y / ⌘+⇧+Z)" onClick={() => travel(1)} /></div>
         </Group>
         <Group>
           <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/")} />
