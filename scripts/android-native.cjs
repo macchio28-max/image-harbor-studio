@@ -10,6 +10,7 @@ fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(dir, "MainActivity.java"), `package com.loma.viewer;
 
 import android.content.ClipData;
+import androidx.core.content.FileProvider;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -164,6 +165,8 @@ public class MainActivity extends BridgeActivity {
     }
 
     private final java.util.HashMap<String, File> cached = new java.util.HashMap<>();
+    private final java.util.HashMap<String, File> outgoing = new java.util.HashMap<>();
+    private final java.util.HashMap<String, String> outMime = new java.util.HashMap<>();
 
     private String nameOf(Uri u) {
         if ("content".equals(u.getScheme())) {
@@ -216,6 +219,50 @@ public class MainActivity extends BridgeActivity {
         }
 
         @JavascriptInterface
+        public String shareBegin(String name, String mime) {
+            try {
+                File d = new File(getCacheDir(), "share_out");
+                d.mkdirs();
+                File[] old = d.listFiles();
+                if (old != null) for (File x : old) if (System.currentTimeMillis() - x.lastModified() > 3600000) x.delete();
+                String safe = (name == null ? "foto.jpg" : name).replaceAll("[^A-Za-z0-9._-]", "_");
+                File f = new File(d, System.currentTimeMillis() + "_" + safe);
+                f.createNewFile();
+                String id = "s" + (++seq);
+                synchronized (outgoing) { outgoing.put(id, f); outMime.put(id, mime == null ? "image/*" : mime); }
+                return id;
+            } catch (Exception e) { Log.e(TAG, "shareBegin", e); return ""; }
+        }
+
+        @JavascriptInterface
+        public boolean shareChunk(String id, String b64) {
+            File f; synchronized (outgoing) { f = outgoing.get(id); }
+            if (f == null) return false;
+            try (FileOutputStream os = new FileOutputStream(f, true)) { os.write(Base64.decode(b64, Base64.DEFAULT)); return true; }
+            catch (Exception e) { Log.e(TAG, "shareChunk", e); return false; }
+        }
+
+        @JavascriptInterface
+        public boolean shareCommit(String id) {
+            File f; String mime;
+            synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
+            if (f == null) return false;
+            try {
+                Uri uri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", f);
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType(mime);
+                send.putExtra(Intent.EXTRA_STREAM, uri);
+                send.setClipData(ClipData.newRawUri(f.getName(), uri));
+                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                Intent chooser = Intent.createChooser(send, "Condividi foto");
+                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                runOnUiThread(() -> startActivity(chooser));
+                Log.i(TAG, "condivisione avviata " + f.getName() + " " + mime);
+                return true;
+            } catch (Exception e) { Log.e(TAG, "shareCommit", e); return false; }
+        }
+
+        @JavascriptInterface
         public void releaseFile(String id) {
             File f;
             synchronized (cached) { f = cached.remove(id); }
@@ -224,9 +271,18 @@ public class MainActivity extends BridgeActivity {
     }
 }
 `);
+const fp = path.join(main, "res", "xml", "file_paths.xml");
+fs.mkdirSync(path.dirname(fp), { recursive: true });
+let fpx = fs.existsSync(fp) ? fs.readFileSync(fp, "utf8") : '<?xml version="1.0" encoding="utf-8"?>\n<paths xmlns:android="http://schemas.android.com/apk/res/android">\n</paths>\n';
+if (!fpx.includes('name="loma_share"')) fpx = fpx.replace("</paths>", '    <cache-path name="loma_share" path="share_out/" />\n</paths>');
+fs.writeFileSync(fp, fpx);
 const mf = path.join(main, "AndroidManifest.xml");
 let xml = fs.readFileSync(mf, "utf8");
 if (/launchMode="[^"]*"/.test(xml)) xml = xml.replace(/android:launchMode="[^"]*"/, 'android:launchMode="singleTask"');
 else xml = xml.replace(/(<activity\b)/, '$1 android:launchMode="singleTask"');
+if (!xml.includes(".fileprovider")) xml = xml.replace("</application>", `        <provider android:name="androidx.core.content.FileProvider" android:authorities="\${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
+    </application>`);
 fs.writeFileSync(mf, xml);
 console.log("MainActivity con ponte immagini Android scritta");
