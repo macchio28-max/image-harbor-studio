@@ -9,7 +9,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 import { ConvertDialog } from "./ConvertDialog";
 import { PrintDialog } from "./PrintDialog";
-import logo from "@/assets/loma-logo.png.asset.json";
+const logo = { url: "/icon-512.png" };
 import {
   type Adjust, defaultAdjust, renderClean, download, baseName, formatBytes, exposure,
   nativeScreenSize,
@@ -358,6 +358,7 @@ export function LomaViewer() {
         if (!raw) return;
         const list = (typeof raw === "string" ? JSON.parse(raw) : raw) as { id?: string; name: string; type?: string; size?: number; data?: string }[] | null;
         if (!Array.isArray(list) || list.length === 0) return;
+        console.info("[LomaAndroid] ricevuti", list.length, "file", list.map((f) => f.name));
         const tid = sonnerToast.loading(list.length === 1 ? "Caricamento immagine da Galleria..." : `Caricamento ${list.length} immagini...`);
         const b64 = (s: string) => {
           const bin = atob(s);
@@ -399,10 +400,15 @@ export function LomaViewer() {
     const pull = () => {
       const bridge = w.LomaAndroid;
       if (!bridge?.takeFiles) return;
-      try { receive(bridge.takeFiles()); } catch (e) { console.warn(e); }
+      try {
+        const raw = bridge.takeFiles();
+        if (raw && raw !== "[]") console.info("[LomaAndroid] takeFiles:", raw.length, "caratteri");
+        receive(raw);
+      } catch (e) { console.warn("[LomaAndroid] takeFiles fallito", e); }
     };
-    w.__lomaReceiveSharedFiles = receive;
+    w.__lomaReceiveSharedFiles = (raw: unknown) => { console.info("[LomaAndroid] push da MainActivity"); return receive(raw); };
     w.__lomaAndroidFiles = pull;
+    console.info("[LomaAndroid] ricevitore pronto, bridge:", !!w.LomaAndroid?.takeFiles);
     if (!w.LomaAndroid?.takeFiles) return () => { delete w.__lomaReceiveSharedFiles; delete w.__lomaAndroidFiles; };
     pull();
     const started = Date.now();
@@ -410,7 +416,11 @@ export function LomaViewer() {
       if (Date.now() - started > 5000) { window.clearInterval(timer); return; }
       pull();
     }, 500);
-    return () => { window.clearInterval(timer); delete w.__lomaAndroidFiles; delete w.__lomaReceiveSharedFiles; };
+    // onNewIntent while the app is already open: pull again when it comes back to the foreground.
+    const onVis = () => { if (document.visibilityState === "visible") pull(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", pull);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", pull); delete w.__lomaAndroidFiles; delete w.__lomaReceiveSharedFiles; };
   }, []);
 
   const clearCache = async () => {
