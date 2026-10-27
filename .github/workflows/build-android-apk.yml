@@ -6,6 +6,9 @@ on:
     branches: [main]
     tags: ["v*"]
 
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -62,7 +65,22 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
-      - uses: actions/upload-artifact@v4
-        with:
-          name: loma-viewer-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+      # Publish to GitHub Releases (no artifact storage quota).
+      - name: Publish APK to GitHub Release (android-latest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -n 1)
+          cp "$APK" loma-viewer.apk
+          TAG=android-latest
+          git tag -f "$TAG"
+          git push -f origin "refs/tags/$TAG"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" loma-viewer.apk --clobber
+            gh release edit "$TAG" --notes "Build automatica da ${GITHUB_SHA::7} ($(date -u +%Y-%m-%d\ %H:%M) UTC)"
+          else
+            gh release create "$TAG" loma-viewer.apk \
+              --title "LoMa Viewer Android (ultima build)" \
+              --notes "Build automatica da ${GITHUB_SHA::7}" \
+              --prerelease
+          fi
