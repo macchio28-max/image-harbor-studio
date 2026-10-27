@@ -15,12 +15,17 @@
     "electron:dev": "electron .",
     "electron:build": "electron-builder --win --mac",
     "electron:build:win": "electron-builder --win",
-    "electron:build:mac": "electron-builder --mac"
+    "electron:build:mac": "electron-builder --mac",
+    "android:add": "cap add android && node scripts/android-intents.cjs",
+    "android:sync": "cap sync android && node scripts/android-intents.cjs",
+    "android:open": "cap open android"
   },
   "overrides": {
     "rolldown": "1.2.1"
   },
   "dependencies": {
+    "@capacitor/android": "^7",
+    "@capacitor/core": "^7",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -79,6 +84,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7",
     "@eslint/js": "^9.32.0",
     "@lovable.dev/vite-tanstack-config": "2.26.5",
     "@testing-library/jest-dom": "^6.6.0",
@@ -87,6 +93,8 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.6",
@@ -99,9 +107,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "8.1.5",
-    "vitest": "^4.1.10",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "vitest": "^4.1.10"
   },
   "version": "1.0.0",
   "main": "electron/main.cjs",
