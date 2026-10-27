@@ -349,6 +349,34 @@ export function LomaViewer() {
     })();
   }, []);
 
+  // Android APK: images received via Share / "Apri con" are handed over by MainActivity (LomaAndroid bridge).
+  useEffect(() => {
+    const bridge = (window as any).LomaAndroid;
+    if (!bridge?.takeFiles) return;
+    const pull = async () => {
+      try {
+        const list = JSON.parse(bridge.takeFiles() || "[]") as { name: string; type?: string; data: string }[];
+        const files = list.map((f) => {
+          const bin = atob(f.data);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          return new File([bytes], f.name, { type: f.type || "" });
+        });
+        if (files.length === 1 && files[0]) await openRef.current(files[0]);
+        else if (files.length > 1) {
+          const dt = new DataTransfer();
+          files.forEach((f) => dt.items.add(f));
+          importRef.current(dt.files);
+        }
+      } catch (e) {
+        console.warn("Android shared files load failed", e);
+      }
+    };
+    (window as any).__lomaAndroidFiles = pull;
+    pull();
+    return () => { delete (window as any).__lomaAndroidFiles; };
+  }, []);
+
   const clearCache = async () => {
     session.forEach((s) => s.thumb?.startsWith("blob:") && URL.revokeObjectURL(s.thumb));
     setSession((s) => s.map((x) => ({ ...x, thumb: null })));
