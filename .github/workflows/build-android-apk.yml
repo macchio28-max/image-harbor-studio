@@ -42,8 +42,10 @@ jobs:
           fi
           echo "Web output found in: $SRC"
           if [ "$SRC" != "dist/client" ]; then
+            TMP=$(mktemp -d)
+            cp -R "$SRC"/. "$TMP"/
             mkdir -p dist/client
-            cp -R "$SRC"/. dist/client/
+            cp -R "$TMP"/. dist/client/
           fi
           ls -la dist/client
           test -f dist/client/index.html
