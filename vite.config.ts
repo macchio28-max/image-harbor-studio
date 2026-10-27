@@ -21,6 +21,7 @@ export default defineConfig({
         devOptions: { enabled: false },
         workbox: {
           navigateFallback: null,
+          importScripts: ["/share-target-sw.js"],
           globPatterns: ["**/*.{js,css,png,svg,ico,webmanifest,woff2}"],
           runtimeCaching: [
             {

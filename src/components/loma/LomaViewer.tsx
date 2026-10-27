@@ -316,6 +316,39 @@ export function LomaViewer() {
     return desk.onFileOpened?.(load);
   }, []);
 
+  // Android/tablet PWA: photos shared to LoMa via the system Share menu (Web Share Target).
+  const openRef = useRef(openFile);
+  openRef.current = openFile;
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("shared") || !("caches" in window)) return;
+    (async () => {
+      try {
+        const cache = await caches.open("loma-share-target");
+        const reqs = await cache.keys();
+        const files: File[] = [];
+        for (const r of reqs) {
+          const res = await cache.match(r);
+          if (res) {
+            const blob = await res.blob();
+            const name = decodeURIComponent(res.headers.get("x-file-name") || "condivisa.jpg");
+            files.push(new File([blob], name, { type: blob.type }));
+          }
+          await cache.delete(r);
+        }
+        window.history.replaceState(null, "", "/");
+        if (files.length === 1 && files[0]) await openRef.current(files[0]);
+        else if (files.length > 1) {
+          const dt = new DataTransfer();
+          files.forEach((f) => dt.items.add(f));
+          importRef.current(dt.files);
+        }
+      } catch (e) {
+        console.warn("Shared files load failed", e);
+      }
+    })();
+  }, []);
+
   const clearCache = async () => {
     session.forEach((s) => s.thumb?.startsWith("blob:") && URL.revokeObjectURL(s.thumb));
     setSession((s) => s.map((x) => ({ ...x, thumb: null })));
