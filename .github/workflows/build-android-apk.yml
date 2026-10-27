@@ -9,6 +9,12 @@ on:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    # ubuntu-latest runners already have the full Android SDK preinstalled at
+    # /usr/local/lib/android/sdk; setting these explicitly avoids the
+    # cmdline-tools version mismatch and the license-acceptance hang.
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,7 +25,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
       - name: Install
         run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: Build web assets (static SPA)
