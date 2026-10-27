@@ -6,7 +6,8 @@ import {
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
   FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, Repeat, LayoutGrid, Square, Printer, Share2,
 } from "lucide-react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Undo2, Redo2 } from "lucide-react";
+import { type History, startHistory, commit, undo, redo } from "./edit-history";
 import { toast as sonnerToast } from "sonner";
 import { ConvertDialog } from "./ConvertDialog";
 import { PrintDialog } from "./PrintDialog";
@@ -454,10 +455,39 @@ export function LomaViewer() {
     notify(`${files.length} foto scaricate: importale in Lightroom.`);
   };
 
+  // undo/redo of adjustments + crop (slider drags grouped by a short pause)
+  const histRef = useRef<History<{ adjust: Adjust; crop: typeof crop }>>(startHistory({ adjust: defaultAdjust, crop: null }));
+  const restoring = useRef(false);
+  const [histTick, setHistTick] = useState(0);
+  useEffect(() => { histRef.current = startHistory({ adjust, crop }); setHistTick((t) => t + 1); }, [img]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (restoring.current) { restoring.current = false; return; }
+    const t = setTimeout(() => { histRef.current = commit(histRef.current, { adjust, crop }); setHistTick((x) => x + 1); }, 350);
+    return () => clearTimeout(t);
+  }, [adjust, crop]);
+  const travel = (dir: -1 | 1) => {
+    const cur = { adjust, crop };
+    let h = commit(histRef.current, cur);
+    h = dir < 0 ? undo(h) : redo(h);
+    if (h.present === cur || JSON.stringify(h.present) === JSON.stringify(cur)) { histRef.current = h; return; }
+    histRef.current = h; restoring.current = true;
+    setAdjust(h.present.adjust); setCrop(h.present.crop); setSel(null); setCropping(false);
+    setHistTick((x) => x + 1);
+    sonnerToast(dir < 0 ? "Modifica annullata" : "Modifica ripristinata", { duration: QUICK_MS });
+  };
+  void histTick;
+  const pendingEdit = JSON.stringify({ adjust, crop }) !== JSON.stringify(histRef.current.present);
+  const canUndo = histRef.current.past.length > 0 || pendingEdit;
+  const canRedo = histRef.current.future.length > 0 && !pendingEdit;
+
   // keyboard culling
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e) => {
     const t = e.target as HTMLElement;
+    const k = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && (k === "z" || k === "y") && !t?.closest?.("textarea,[contenteditable],input[type=text]")) {
+      e.preventDefault(); travel(k === "y" || e.shiftKey ? 1 : -1); return;
+    }
     if (t?.closest?.("input,textarea,select,[contenteditable]")) return;
     if (e.key.toLowerCase() === "g" && !e.ctrlKey && !e.metaKey && session.length) { e.preventDefault(); setStripOpen(false); setView("grid"); return; }
     if (e.key === "Escape" && view === "loupe" && session.length > 1 && !document.fullscreenElement) { e.preventDefault(); setStripOpen(false); setView("grid"); return; }
@@ -974,6 +1004,8 @@ export function LomaViewer() {
           <Tool icon={<SlidersHorizontal className="text-primary" />} label="Sviluppo" tip="Pannello strumenti di sviluppo" active={toolsOpen} onClick={() => setToolsOpen((o) => !o)} />
           <Tool icon={<Camera />} label="Cattura" tip="Screenshot a risoluzione nativa" onClick={screenshot} />
           <Tool icon={<Eraser className="text-chart-3" />} label="Pulisci" tip="Rimuovi tutti i metadati" onClick={deepClean} />
+          <div className={canUndo ? "" : "pointer-events-none opacity-40"}><Tool icon={<Undo2 />} label="Annulla" tip="Annulla ultima modifica (Ctrl/⌘+Z)" onClick={() => travel(-1)} /></div>
+          <div className={canRedo ? "" : "pointer-events-none opacity-40"}><Tool icon={<Redo2 />} label="Ripeti" tip="Ripeti modifica (Ctrl+Y / ⌘+⇧+Z)" onClick={() => travel(1)} /></div>
         </Group>
         <Group>
           <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/")} />
