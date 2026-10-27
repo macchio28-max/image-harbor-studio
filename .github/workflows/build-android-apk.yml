@@ -1,0 +1,43 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Capacitor 7 requires JDK 21 (JDK 17 fails the Gradle build).
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: Install
+        run: npm install --legacy-peer-deps --no-audit --no-fund
+      - name: Build web assets (static SPA)
+        run: npm run build:android
+      - name: Add Android platform (android/ is generated, not committed)
+        run: "[ -d android ] || npx cap add android"
+      - name: Sync + patch native project
+        run: |
+          npx cap sync android
+          node scripts/android-intents.cjs
+          node scripts/android-native.cjs
+          node scripts/android-icons.cjs
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loma-viewer-apk
+          path: android/app/build/outputs/apk/debug/*.apk
