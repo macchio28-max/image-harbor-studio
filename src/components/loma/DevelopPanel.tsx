@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import {
   RotateCcw, RotateCw, Wand2, FlipHorizontal, FlipVertical, Crop as CropIcon, Pipette, X, Check,
   Sun, Contrast, SunMoon, CircleDot, Spline, BarChart3, Thermometer, Droplet, Disc3, Grip, Sparkles, CloudFog, Aperture,
-  ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
+  ChevronUp, ChevronDown,
 } from "lucide-react";
 import { type Adjust, defaultAdjust, monotoneSpline, WB_PRESETS, type WbMode, type Tone } from "./develop";
 
@@ -188,14 +188,14 @@ export function DevelopPanel(props: {
   if (props.sheet) {
     return (
       <div onPointerDown={(e) => e.stopPropagation()} style={{ height: `${h}vh` }}
-        className="fixed inset-x-2 bottom-2 z-50 flex flex-col overflow-hidden rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur">
+        className="fixed inset-x-2 bottom-16 z-50 flex flex-col overflow-hidden rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur">
         <div className="flex touch-none items-center justify-center gap-3 py-1"
           onPointerDown={(e) => { (e.target as Element).setPointerCapture(e.pointerId); drag.current = { y: e.clientY, h }; }}
-          onPointerMove={(e) => { const d = drag.current; if (d) setH(Math.min(88, Math.max(18, d.h - ((e.clientY - d.y) / window.innerHeight) * 100))); }}
+          onPointerMove={(e) => { const d = drag.current; if (d) setH(Math.min(80, Math.max(18, d.h - ((e.clientY - d.y) / window.innerHeight) * 100))); }}
           onPointerUp={() => { drag.current = null; }}>
           <button aria-label="Rimpicciolisci" onClick={() => setH((v) => Math.max(18, v - 20))} className="p-1 text-muted-foreground"><ChevronDown className="h-4 w-4" /></button>
           <span className="h-1.5 w-12 rounded-full bg-muted-foreground/50" />
-          <button aria-label="Ingrandisci" onClick={() => setH((v) => Math.min(88, v + 20))} className="p-1 text-muted-foreground"><ChevronUp className="h-4 w-4" /></button>
+          <button aria-label="Ingrandisci" onClick={() => setH((v) => Math.min(80, v + 20))} className="p-1 text-muted-foreground"><ChevronUp className="h-4 w-4" /></button>
         </div>
         {content}
       </div>
@@ -337,5 +337,3 @@ function Histogram({ hist }: { hist: any[] | null }) {
   );
 }
 
-// Unused-icon guard for tree-shaking clarity.
-void ChevronLeft; void ChevronRight;
