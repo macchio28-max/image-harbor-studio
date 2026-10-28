@@ -262,6 +262,33 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception e) { Log.e(TAG, "shareCommit", e); return false; }
         }
 
+        // Sends the uploaded file straight to one installed app (setPackage); falls back to the chooser if missing.
+        @JavascriptInterface
+        public boolean shareCommitTo(String id, String pkg) {
+            File f; String mime;
+            synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
+            if (f == null) return false;
+            try {
+                Uri uri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", f);
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType(mime);
+                send.putExtra(Intent.EXTRA_STREAM, uri);
+                send.setClipData(ClipData.newRawUri(f.getName(), uri));
+                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                Intent direct = new Intent(send).setPackage(pkg);
+                runOnUiThread(() -> {
+                    try { startActivity(direct); Log.i(TAG, "inviato direttamente a " + pkg); }
+                    catch (Exception e) {
+                        Log.i(TAG, pkg + " non installata, apro il menu");
+                        Intent ch = Intent.createChooser(send, "Condividi foto");
+                        ch.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(ch);
+                    }
+                });
+                return true;
+            } catch (Exception e) { Log.e(TAG, "shareCommitTo", e); return false; }
+        }
+
         // Copies an uploaded file into Pictures/LoMa (MediaStore on Android 10+, MediaScanner before) so it shows in Galleria.
         @JavascriptInterface
         public boolean saveCommit(String id, String name) {
