@@ -1,5 +1,5 @@
 import { stripBlob } from "./sanitize";
-import { type Adjust, defaultAdjust, developCanvas } from "./develop";
+import { type Adjust, defaultAdjust, developCanvas, isNeutral } from "./develop";
 export { type Adjust, defaultAdjust };
 
 /** Redraws pixels on a blank canvas: output carries no EXIF/IPTC/XMP/C2PA/AI chunks. */
@@ -14,7 +14,12 @@ export async function renderClean(
   const src = document.createElement("canvas");
   src.width = sw; src.height = sh;
   src.getContext("2d")!.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-  const dev = developCanvas(src, sw, sh, adjust, 1).canvas;
+  // Neutral settings: skip the pixel pipeline (big speed-up for Pulisci/Salva).
+  const dev = isNeutral(adjust) ? src : developCanvas(src, sw, sh, adjust, 1).canvas;
+  if (dev === src && !adjust.rotation && !adjust.straighten && !adjust.flipH) {
+    const raw0 = await new Promise<Blob>((res, rej) => src.toBlob((b) => (b ? res(b) : rej(new Error("export"))), type, 0.97));
+    return stripBlob(raw0);
+  }
   const ang = ((adjust.rotation + adjust.straighten) * Math.PI) / 180;
   const cos = Math.abs(Math.cos(ang)), sin = Math.abs(Math.sin(ang));
   const c = document.createElement("canvas");
@@ -30,7 +35,17 @@ export async function renderClean(
   return stripBlob(raw);
 }
 
+/** Saves a file: Android APK writes it to Pictures/LoMa via the native bridge (shows in Galleria), else browser download. */
 export function download(blob: Blob, name: string) {
+  const a0 = typeof window !== "undefined" ? (window as any).LomaAndroid : null;
+  if (a0?.saveCommit) {
+    void import("./android-share").then((m) => m.androidSave(blob, name)).then((ok) => { if (!ok) browserDownload(blob, name); });
+    return;
+  }
+  browserDownload(blob, name);
+}
+
+function browserDownload(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

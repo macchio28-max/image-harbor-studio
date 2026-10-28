@@ -596,8 +596,17 @@ export function LomaViewer() {
   };
   const deepClean = async () => {
     // Lossless PNG re-encode from a fresh canvas + byte-level chunk scrub (see sanitize.ts).
-    if (await exportClean("image/png", "_clean"))
-      notify("Pulizia completa: EXIF, XMP, IPTC, ICC, C2PA/JUMBF e testi AI rimossi; pixel riscritti senza perdita (PNG).");
+    if (!need()) return;
+    const t = sonnerToast.loading("Pulizia in corso…");
+    try {
+      const b = await exportClean("image/png", "_clean");
+      if (!b) return;
+      // Replace the open photo with the clean file so Info/EXIF/Provenienza reflect it at once.
+      await openFile(new File([b], `${baseName(img!.file.name)}_clean.png`, { type: "image/png" }));
+      sonnerToast.success("Pulita e salvata: EXIF, XMP, IPTC, ICC, C2PA/JUMBF e testi AI rimossi (PNG senza perdita).", { id: t, duration: 3000 });
+    } catch {
+      sonnerToast.error("Pulizia non riuscita.", { id: t });
+    }
   };
 
   const screenshot = async () => {
