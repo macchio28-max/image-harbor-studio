@@ -1040,7 +1040,9 @@ export function LomaViewer() {
             <div className="text-[9px] font-bold tracking-[0.2em] text-primary">VIEWER</div>
           </div>
         </div>
-        <div className="no-drag flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 py-1"><div className="flex w-full items-stretch gap-0.5">
+        <div onClick={phone ? (e) => { if ((e.target as HTMLElement).closest("button")) setMoreOpen(false); } : undefined}
+          className={phone ? (moreOpen ? "no-drag fixed inset-x-2 bottom-16 z-50 max-h-[65vh] overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-2xl" : "hidden") : "no-drag flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 py-1"}>
+          <div className={phone ? "flex flex-wrap items-stretch gap-1" : "flex w-full items-stretch gap-0.5"}>
         <Group>
           <Tool icon={<HardDrive className="text-primary" />} label="Importa" tip="Importa scheda / cartella" onClick={() => folderInput.current?.click()} />
           <Tool icon={<Images />} label="Apri" tip="Apri più file" onClick={() => multiInput.current?.click()} />
@@ -1295,6 +1297,12 @@ export function LomaViewer() {
               </span>
             </button>
           ))}
+          {phone && img && view === "loupe" && (
+            <button aria-label="Informazioni immagine" onPointerDown={(e) => e.stopPropagation()} onClick={() => setInfoOpen(true)}
+              className="absolute left-2 top-2 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-popover/80 text-foreground shadow">
+              <Info className="h-5 w-5" />
+            </button>
+          )}
           {toast && (
             <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md bg-popover px-4 py-2 text-sm shadow-xl">{toast}</div>
           )}
@@ -1306,7 +1314,9 @@ export function LomaViewer() {
         </div>
 
         {/* Side panel */}
-        <aside className="hidden w-80 shrink-0 overflow-y-auto rounded-lg border border-border bg-card md:block">
+        {phone && infoOpen && <div className="fixed inset-0 z-40 bg-background/50" onClick={() => setInfoOpen(false)} />}
+        <aside className={phone ? (infoOpen ? "fixed inset-x-2 bottom-16 z-50 max-h-[70vh] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl" : "hidden") : "hidden w-80 shrink-0 overflow-y-auto rounded-lg border border-border bg-card md:block"}>
+          {phone && <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-3 py-2 text-sm font-medium">Informazioni<button aria-label="Chiudi informazioni" onClick={() => setInfoOpen(false)} className="p-1"><X className="h-4 w-4" /></button></div>}
           <Section icon={<Info className="h-5 w-5" />} title="Informazioni immagine" chevron>
             <div className="flex gap-3">
               <div className="flex h-20 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
@@ -1379,6 +1389,28 @@ export function LomaViewer() {
         />
       )}
 
+      {phone && (
+        <nav className="flex h-14 shrink-0 items-stretch justify-around border-t border-border bg-toolbar px-1">
+          {([
+            [<FolderOpen key="o" className="h-5 w-5" />, "Apri", () => fileInput.current?.click(), false],
+            [view === "grid" ? <Square key="g" className="h-5 w-5" /> : <LayoutGrid key="g" className="h-5 w-5" />, view === "grid" ? "Singola" : "Griglia", () => {
+              if (!session.length) return notify("Importa prima più foto.");
+              if (view === "grid") return openLoupe();
+              setStripOpen(false); setView("grid");
+            }, view === "grid"],
+            [<SlidersHorizontal key="s" className="h-5 w-5" />, "Regola", () => setToolsOpen((o) => !o), toolsOpen],
+            [<Eraser key="e" className="h-5 w-5" />, "Pulisci", deepClean, false],
+            [<Share2 key="c" className="h-5 w-5" />, "Condividi", () => (img ? sharePhoto() : notify("Apri prima un'immagine da condividere.")), false],
+            [<MoreHorizontal key="m" className="h-5 w-5" />, "Altro", () => setMoreOpen((o) => !o), moreOpen],
+          ] as const).map(([ic, l, fn, on]) => (
+            <button key={l} onClick={() => { if (l !== "Altro") setMoreOpen(false); (fn as () => void)(); }}
+              className={`flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] ${on ? "text-primary" : "text-muted-foreground"}`}>
+              {ic}{l}
+            </button>
+          ))}
+        </nav>
+      )}
+      {phone && moreOpen && <div className="fixed inset-0 z-40 bg-background/50" onClick={() => setMoreOpen(false)} />}
       <input ref={fileInput} type="file" accept={ACCEPT} hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) openFile(f); e.target.value = ""; }} />
       <input ref={multiInput} type="file" accept={ACCEPT} multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }} />
       <input
