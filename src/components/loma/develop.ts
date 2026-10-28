@@ -8,7 +8,12 @@ export type WbMode = "asShot" | "auto" | "daylight" | "cloudy" | "shade" | "tung
 export type Curve = "linear" | "standard" | "high";
 
 export type Adjust = {
-  rotation: number; flipH: boolean; straighten: number;
+  rotation: number; flipH: boolean; flipV: boolean; straighten: number;
+  vibrance: number; texture: number;
+  /** Master RGB curve control points (x,y in 0..1), sorted by x. */
+  curvePts: [number, number][];
+  /** Levels: input black/white (0..255) and midtone gamma. */
+  lvBlack: number; lvWhite: number; lvGamma: number;
   curve: Curve;
   wbMode: WbMode; kelvin: number; tint: number;
   exposure: number; contrast: number; brightness: number; saturation: number;
@@ -25,7 +30,8 @@ export type Adjust = {
 const zeroHsl = () => Object.fromEntries(HSL_CH.map((c) => [c, { h: 0, s: 0, l: 0 }])) as Record<HslCh, Hsl>;
 
 export const defaultAdjust: Adjust = {
-  rotation: 0, flipH: false, straighten: 0, curve: "linear",
+  rotation: 0, flipH: false, flipV: false, straighten: 0, curve: "linear",
+  vibrance: 0, texture: 0, curvePts: [[0, 0], [1, 1]], lvBlack: 0, lvWhite: 255, lvGamma: 1,
   wbMode: "asShot", kelvin: 5500, tint: 0,
   exposure: 0, contrast: 0, brightness: 0, saturation: 0,
   highlight: 0, shadow: 0, white: 0, black: 0,
@@ -68,16 +74,62 @@ function hueRgb(h: number): [number, number, number] {
 function toneLut(a: Adjust) {
   const N = 1024, lut = new Float32Array(N + 1);
   const g = 1 / (1 + (a.brightness / 100) * 0.7);
-  const c = 1 + a.contrast / 100;
+  const c = Math.pow(2, a.contrast / 100);
   const curveK = a.curve === "standard" ? 0.25 : a.curve === "high" ? 0.5 : 0;
   for (let i = 0; i <= N; i++) {
     let v = i / N;
     v = Math.pow(v, g);
     if (curveK) v = v + curveK * (v - 0.5) * (1 - Math.abs(2 * v - 1)) * 0.9 * 2 * 0.5;
-    v = (v - 0.5) * c + 0.5;
+    // Contrast as an S-curve around mid grey (no hard clipping of whites/blacks).
+    if (c !== 1) { const k = c; v = v < 0.5 ? 0.5 * Math.pow(2 * v, k) : 1 - 0.5 * Math.pow(2 * (1 - v), k); }
     lut[i] = clamp01(v);
   }
+  const lb = a.lvBlack / 255, lw = Math.max(lb + 0.01, a.lvWhite / 255), lg = 1 / Math.max(0.1, a.lvGamma);
+  const pts = a.curvePts ?? [[0, 0], [1, 1]];
+  const curveOn = !(pts.length === 2 && pts[0]![0] === 0 && pts[0]![1] === 0 && pts[1]![0] === 1 && pts[1]![1] === 1);
+  const spline = curveOn ? monotoneSpline(pts) : null;
+  if (lb !== 0 || lw !== 1 || lg !== 1 || spline) {
+    for (let i = 0; i <= N; i++) {
+      let v = lut[i]!;
+      v = Math.pow(clamp01((v - lb) / (lw - lb)), lg);
+      if (spline) v = spline(v);
+      lut[i] = clamp01(v);
+    }
+  }
   return lut;
+}
+
+/** Monotone cubic (Fritsch–Carlson) interpolation through curve points: smooth, never overshoots. */
+export function monotoneSpline(p0: [number, number][]) {
+  const p = [...p0].sort((a, b) => a[0] - b[0]);
+  const n = p.length, xs = p.map((q) => q[0]), ys = p.map((q) => q[1]);
+  const d: number[] = [], m: number[] = new Array(n).fill(0);
+  for (let i = 0; i < n - 1; i++) d.push((ys[i + 1]! - ys[i]!) / Math.max(1e-6, xs[i + 1]! - xs[i]!));
+  m[0] = d[0] ?? 0; m[n - 1] = d[n - 2] ?? 0;
+  for (let i = 1; i < n - 1; i++) m[i] = d[i - 1]! * d[i]! <= 0 ? 0 : (d[i - 1]! + d[i]!) / 2;
+  for (let i = 0; i < n - 1; i++) {
+    if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+    const a = m[i]! / d[i]!, b = m[i + 1]! / d[i]!, h = a * a + b * b;
+    if (h > 9) { const t = 3 / Math.sqrt(h); m[i] = t * a * d[i]!; m[i + 1] = t * b * d[i]!; }
+  }
+  return (x: number) => {
+    if (x <= xs[0]!) return ys[0]!;
+    if (x >= xs[n - 1]!) return ys[n - 1]!;
+    let i = 0; while (x > xs[i + 1]!) i++;
+    const h = xs[i + 1]! - xs[i]!, t = (x - xs[i]!) / h, t2 = t * t, t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * ys[i]! + (t3 - 2 * t2 + t) * h * m[i]! + (-2 * t3 + 3 * t2) * ys[i + 1]! + (t3 - t2) * h * m[i + 1]!;
+  };
+}
+
+/**
+ * Exposure in linear light with a highlight shoulder (extended Reinhard, white point = gain):
+ * +EV brightens mids/shadows while highlights roll off smoothly instead of clipping.
+ */
+export function exposeChannel(v: number, gain: number) {
+  if (gain === 1) return v;
+  const lin = Math.pow(v, 2.2) * gain;
+  const out = gain > 1 ? (lin * (1 + lin / (gain * gain))) / (1 + lin) : lin;
+  return Math.pow(Math.max(0, out), 1 / 2.2);
 }
 
 function blurData(src: HTMLCanvasElement, r: number): Uint8ClampedArray | null {
@@ -90,7 +142,7 @@ function blurData(src: HTMLCanvasElement, r: number): Uint8ClampedArray | null {
   return ctx.getImageData(0, 0, c.width, c.height).data;
 }
 
-export const isNeutral = (a: Adjust) => JSON.stringify({ ...a, rotation: 0, flipH: false, straighten: 0 }) === JSON.stringify({ ...defaultAdjust });
+export const isNeutral = (a: Adjust) => JSON.stringify({ ...a, rotation: 0, flipH: false, flipV: false, straighten: 0 }) === JSON.stringify({ ...defaultAdjust });
 
 /**
  * Develops `source` at size w×h. `pxScale` = w / original width (to keep radii consistent).
@@ -106,7 +158,7 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
   const long = Math.max(w, h);
 
   const needLocal = a.clarity !== 0;
-  const needStruct = a.structure !== 0;
+  const needStruct = a.structure !== 0 || a.texture !== 0;
   const bClar: any = needLocal ? blurData(base, long * 0.015) : null;
   const bStruct: any = needStruct ? blurData(base, long * 0.003 + 1) : null;
   const bSharp: any = a.sharpAmount > 0 ? blurData(base, Math.max(0.3, a.sharpRadius * pxScale)) : null;
@@ -123,12 +175,13 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
   const op = a.layerOpacity / 100;
   const tones = ([[a.cbShadows, 0], [a.cbMid, 1], [a.cbHigh, 2]] as const)
     .filter(([t]) => t.a !== 0)
-    .map(([t, k]) => { const [r, g, b] = hueRgb(t.h); const m = (t.a / 100) * 0.25; return { k, r: (r - 0.5) * m, g: (g - 0.5) * m, b: (b - 0.5) * m }; });
+    .map(([t, k]) => { const [r, g, b] = hueRgb(t.h); const m = (t.a / 100) * 0.18; return { k, r: (r - 0.5) * m, g: (g - 0.5) * m, b: (b - 0.5) * m }; });
   const hslOn = HSL_CH.some((c) => a.hsl[c].h || a.hsl[c].s || a.hsl[c].l);
   const vig = a.vigAmount;
   const nrL = a.nrLum / 100 * 0.85, nrC = a.nrColor / 100;
   const shA = a.sharpAmount / 100 * 2;
-  const clar = a.clarity / 100 * 1.2, str = a.structure / 100 * 1.5;
+  const clar = a.clarity / 100 * 0.8, str = (a.structure + a.texture) / 100 * 1.2;
+  const vib = a.vibrance / 100;
   const hist: any = wantHist ? [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)] : null;
 
   for (let y = 0; y < h; y++) {
@@ -147,20 +200,23 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
         const dl = (bY - Y) * nrL; r += dl; g += dl; b += dl;
       }
 
-      r *= gr * ev; g *= gg * ev; b *= gb * ev;
+      r *= gr; g *= gg; b *= gb;
+      if (ev !== 1) { r = exposeChannel(r, ev); g = exposeChannel(g, ev); b = exposeChannel(b, ev); }
 
       let Y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       if (hl || sh || wh || bl || bClar || bStruct) {
         let nY = Y;
-        const hw = sstep(0.45, 1, Y), sw = 1 - sstep(0, 0.55, Y);
-        nY += hl * 0.5 * hw * Y + sh * 0.4 * sw * (1 - Y) * (Y + 0.05);
-        nY += wh * 0.25 * Y * Y * Y + bl * 0.2 * (1 - Y) * (1 - Y) * (1 - Y);
+        const hw = sstep(0.5, 1, Y), sw = 1 - sstep(0, 0.5, Y);
+        // Highlights/shadows: gentle, tone-limited; positive highlights can't push past white.
+        nY += hl > 0 ? hl * 0.35 * hw * (1 - Y) : hl * 0.45 * hw * Y;
+        nY += sh * 0.35 * sw * (1 - Y) * (Y + 0.04);
+        nY += wh * 0.18 * Y * Y * (wh > 0 ? 1 - Y * 0.5 : 1) + bl * 0.15 * (1 - Y) * (1 - Y) * (1 - Y);
         if (bClar) {
-          const cY = (0.2126 * bClar[i] + 0.7152 * bClar[i + 1] + 0.0722 * bClar[i + 2]) / 255 * gr * ev;
+          const cY = exposeChannel((0.2126 * bClar[i] + 0.7152 * bClar[i + 1] + 0.0722 * bClar[i + 2]) / 255, ev);
           nY += (Y - cY) * clar * (1 - Math.abs(2 * Y - 1) * 0.6);
         }
         if (bStruct) {
-          const cY = (0.2126 * bStruct[i] + 0.7152 * bStruct[i + 1] + 0.0722 * bStruct[i + 2]) / 255 * gr * ev;
+          const cY = exposeChannel((0.2126 * bStruct[i] + 0.7152 * bStruct[i + 1] + 0.0722 * bStruct[i + 2]) / 255, ev);
           nY += (Y - cY) * str;
         }
         if (Y > 1e-4) { const k = Math.max(0, nY) / Y; r *= k; g *= k; b *= k; } else { r = g = b = Math.max(0, nY); }
@@ -177,6 +233,13 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
 
       Y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       if (sat !== 1) { r = Y + (r - Y) * sat; g = Y + (g - Y) * sat; b = Y + (b - Y) * sat; }
+      if (vib) {
+        // Vibrance: boosts muted colours most, protects already-saturated tones and skin (r>g>b).
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b), cs = mx > 1e-4 ? (mx - mn) / mx : 0;
+        const skin = r > g && g > b ? 0.5 : 1;
+        const k = 1 + vib * (1 - cs) * (vib > 0 ? skin : 1);
+        r = Y + (r - Y) * k; g = Y + (g - Y) * k; b = Y + (b - Y) * k;
+      }
 
       for (const t of tones) {
         const wgt = t.k === 0 ? 1 - sstep(0, 0.5, Y) : t.k === 2 ? sstep(0.5, 1, Y) : 1 - Math.abs(2 * Y - 1);

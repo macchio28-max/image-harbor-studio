@@ -21,6 +21,16 @@ for (const p of perms) {
   const name = p.match(/name="([^"]+)"/)[1];
   if (!xml.includes(`"${name}"`)) xml = xml.replace("</manifest>", `    ${p}\n</manifest>`);
 }
+// Android 11+ package visibility: without <queries> setPackage() to these apps fails silently.
+const pkgs = ["com.openai.chatgpt", "com.facebook.stellar", "com.google.android.apps.bard", "com.google.android.apps.labs.flow",
+  "com.adobe.lrmobile", "com.google.android.apps.docs", "com.microsoft.skydrive", "com.google.android.gm", "com.microsoft.office.outlook",
+  "it.libero.mail", "com.yahoo.mobile.client.android.mail", "com.whatsapp", "org.localsend.localsend_app"];
+xml = xml.replace(/\n?\s*<queries>[\s\S]*?<!-- loma-queries -->[\s\S]*?<\/queries>/, "");
+const queries = `    <queries><!-- loma-queries -->
+${pkgs.map((p) => `        <package android:name="${p}" />`).join("\n")}
+        <intent><action android:name="android.intent.action.SEND" /><data android:mimeType="image/*" /></intent>
+    </queries>`;
+xml = xml.replace("</manifest>", `${queries}\n</manifest>`);
 if (xml.includes("loma-intents")) { fs.writeFileSync(file, xml); console.log("Intent filter già presenti, attività e permessi aggiornati"); process.exit(0); }
 const raw = ["image/x-canon-cr2", "image/x-canon-cr3", "image/x-nikon-nef", "image/x-sony-arw", "image/x-panasonic-rw2", "image/x-olympus-orf", "image/x-adobe-dng", "image/tiff"];
 const ext = ["dng", "cr2", "cr3", "nef", "arw", "rw2", "orf", "tif", "tiff"];

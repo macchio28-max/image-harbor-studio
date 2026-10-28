@@ -255,7 +255,7 @@ public class MainActivity extends BridgeActivity {
                 send.setClipData(ClipData.newRawUri(f.getName(), uri));
                 send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 Intent chooser = Intent.createChooser(send, "Condividi foto");
-                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
                 runOnUiThread(() -> startActivity(chooser));
                 Log.i(TAG, "condivisione avviata " + f.getName() + " " + mime);
                 return true;
@@ -281,8 +281,8 @@ public class MainActivity extends BridgeActivity {
                     catch (Exception e) {
                         Log.i(TAG, pkg + " non installata, apro il menu");
                         Intent ch = Intent.createChooser(send, "Condividi foto");
-                        ch.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        startActivity(ch);
+                        ch.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                        try { startActivity(ch); } catch (Exception e2) { Log.e(TAG, "chooser", e2); }
                     }
                 });
                 return true;

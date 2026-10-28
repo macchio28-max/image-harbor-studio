@@ -6,7 +6,7 @@ import {
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
   FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, Repeat, LayoutGrid, Square, Printer, Share2,
 } from "lucide-react";
-import { ChevronLeft, ChevronRight, Undo2, Redo2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Undo2, Redo2, MoreHorizontal } from "lucide-react";
 import { type History, startHistory, commit, undo, redo } from "./edit-history";
 import { toast as sonnerToast } from "sonner";
 import { ConvertDialog } from "./ConvertDialog";
@@ -46,6 +46,16 @@ export function LomaViewer() {
   const [adjust, setAdjust] = useState<Adjust>(defaultAdjust);
   const [crop, setCrop] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [cropping, setCropping] = useState(false);
+  const [aspect, setAspect] = useState<number | null>(null);
+  const [phone, setPhone] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const f = () => setPhone(mq.matches); f();
+    mq.addEventListener("change", f); return () => mq.removeEventListener("change", f);
+  }, []);
+  const cropDrag = useRef<{ h: string; x: number; y: number; s: { x: number; y: number; w: number; h: number } } | null>(null);
   const [sel, setSel] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [compare, setCompare] = useState(false);
   const [active, setActive] = useState<"A" | "B">("A");
@@ -114,11 +124,54 @@ export function LomaViewer() {
     setAdjust((a) => ({ ...a, exposure: r.exposure }));
   };
   const aspectSel = (ratio: number | null) => {
-    if (!img || !ratio) { setSel(null); return; }
-    let w = img.w, h = w / ratio;
-    if (h > img.h) { h = img.h; w = h * ratio; }
-    setSel({ x: (img.w - w) / 2, y: (img.h - h) / 2, w, h });
+    setAspect(ratio);
+    if (!img) return;
+    setCropping(true); setMode("select");
+    if (!ratio) { setSel((c) => c && c.w > 4 ? c : crop ? { ...crop } : { x: img.w * 0.1, y: img.h * 0.1, w: img.w * 0.8, h: img.h * 0.8 }); return; }
+    // Fit the ratio inside the current box (or the photo), keeping its centre.
+    setSel((c) => {
+      const b = c && c.w > 4 ? c : crop ?? { x: 0, y: 0, w: img.w, h: img.h };
+      let w = b.w, h = w / ratio;
+      if (h > b.h) { h = b.h; w = h * ratio; }
+      const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      return { x: Math.max(0, Math.min(img.w - w, cx - w / 2)), y: Math.max(0, Math.min(img.h - h, cy - h / 2)), w, h };
+    });
   };
+  /** Crop box edit: h = handle (n,s,e,w,ne,nw,se,sw) or "move". Works in image pixels. */
+  const cropPointer = (hdl: string) => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (!sel) return;
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    cropDrag.current = { h: hdl, x: e.clientX, y: e.clientY, s: { ...sel } };
+  };
+  const cropMove = (e: React.PointerEvent) => {
+    const d = cropDrag.current; if (!d || !img) return;
+    e.stopPropagation();
+    const dx = (e.clientX - d.x) / scale, dy = (e.clientY - d.y) / scale, s0 = d.s, MIN = 24;
+    if (d.h === "move") {
+      setSel({ ...s0, x: Math.max(0, Math.min(img.w - s0.w, s0.x + dx)), y: Math.max(0, Math.min(img.h - s0.h, s0.y + dy)) });
+      return;
+    }
+    let l = s0.x, t = s0.y, r = s0.x + s0.w, b = s0.y + s0.h;
+    if (d.h.includes("w")) l = Math.min(r - MIN, Math.max(0, l + dx));
+    if (d.h.includes("e")) r = Math.max(l + MIN, Math.min(img.w, r + dx));
+    if (d.h.includes("n")) t = Math.min(b - MIN, Math.max(0, t + dy));
+    if (d.h.includes("s")) b = Math.max(t + MIN, Math.min(img.h, b + dy));
+    if (aspect) {
+      let w = r - l, h = b - t;
+      const horiz = d.h === "e" || d.h === "w" || (d.h.length === 2 && Math.abs(dx) >= Math.abs(dy));
+      if (horiz) h = w / aspect; else w = h * aspect;
+      // anchor the opposite side/corner, centre for single edges
+      if (d.h === "n" || d.h === "s") { const cx = (s0.x + s0.x + s0.w) / 2; l = cx - w / 2; }
+      else if (d.h.includes("w")) l = r - w;
+      if (d.h === "e" || d.h === "w") { const cy = s0.y + s0.h / 2; t = cy - h / 2; }
+      else if (d.h.includes("n")) t = b - h;
+      if (l < 0 || t < 0 || l + w > img.w || t + h > img.h || w < MIN || h < MIN) return;
+      r = l + w; b = t + h;
+    }
+    setSel({ x: l, y: t, w: r - l, h: b - t });
+  };
+  const cropUp = (e: React.PointerEvent) => { e.stopPropagation(); cropDrag.current = null; };
 
   const fit = useCallback((w?: number, h?: number) => {
     const el = stage.current;
@@ -545,7 +598,7 @@ export function LomaViewer() {
     if (pts.length === 2) {
       const d = Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y);
       gesture.current = { type: "pinch", d, scale: state.current.scale };
-    } else if (mode === "select" && pts.length === 1) {
+    } else if (mode === "select" && !cropping && pts.length === 1) {
       const p = toImage(local(e));
       gesture.current = { type: "sel", start: p };
       setSel({ x: p.x, y: p.y, w: 0, h: 0 });
@@ -674,7 +727,11 @@ export function LomaViewer() {
     const mobile = isTouchDevice();
     if (img && pkg && (window as any).LomaAndroid?.shareCommitTo) {
       // Android APK: open the installed app directly with the photo attached.
-      if (await androidShare(await outputFile(), pkg)) return;
+      const t = sonnerToast.loading(`Apertura di ${name}…`);
+      try {
+        if (await androidShare(await outputFile(), pkg)) { sonnerToast.success(`${name} aperto`, { id: t, duration: QUICK_MS }); return; }
+        sonnerToast.dismiss(t);
+      } catch { sonnerToast.dismiss(t); }
     }
     if (img && mobile) {
       // Touch: each AI opens its own app/site (universal link) with the photo in the clipboard.
@@ -787,7 +844,7 @@ export function LomaViewer() {
   };
 
   // Cloud = save the shown (edited, metadata-free) photo INTO the user's cloud space.
-  const isEdited = () => !isNeutral(adjust) || !!crop || adjust.rotation !== 0 || adjust.flipH || adjust.straighten !== 0;
+  const isEdited = () => !isNeutral(adjust) || !!crop || adjust.rotation !== 0 || adjust.flipH || adjust.flipV || adjust.straighten !== 0;
   /** Original file (name + extension) when unedited; edited PNG otherwise. */
   const openPrint = async () => {
     if (!img || !imgEl.current) { notify("Apri prima un'immagine da stampare"); return; }
@@ -913,7 +970,7 @@ export function LomaViewer() {
       const file = img!.file;
       const disk: string = (file as any).lomaPath || (desk.getPathForFile?.(file) ?? "");
       const isRaw = /\.(cr2|cr3|crw|nef|nrw|arw|srf|sr2|dng|orf|rw2|raf|pef|srw|3fr|iiq|erf|kdc|mef|mos|mrw|x3f|rwl)$/i.test(file.name);
-      const edited = !isNeutral(adjust) || !!crop || adjust.rotation !== 0 || adjust.flipH || adjust.straighten !== 0;
+      const edited = !isNeutral(adjust) || !!crop || adjust.rotation !== 0 || adjust.flipH || adjust.flipV || adjust.straighten !== 0;
       const useOriginal = !!disk && (isRaw || !edited);
       const fname = `${baseName(file.name)}_for_${app.replace(/\s/g, "")}.png`;
       let b: Blob | null = null;
@@ -963,7 +1020,7 @@ export function LomaViewer() {
     imageRendering: scale >= 2 ? "pixelated" : "auto",
   });
   const rotStyle: React.CSSProperties = {
-    transform: `rotate(${adjust.rotation + adjust.straighten}deg) scaleX(${adjust.flipH ? -1 : 1})`,
+    transform: `rotate(${adjust.rotation + adjust.straighten}deg) scale(${adjust.flipH ? -1 : 1}, ${adjust.flipV ? -1 : 1})`,
     transformOrigin: "center", width: "100%", height: "100%",
   };
 
@@ -983,7 +1040,9 @@ export function LomaViewer() {
             <div className="text-[9px] font-bold tracking-[0.2em] text-primary">VIEWER</div>
           </div>
         </div>
-        <div className="no-drag flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 py-1"><div className="flex w-full items-stretch gap-0.5">
+        <div onClick={phone ? (e) => { if ((e.target as HTMLElement).closest("button")) setMoreOpen(false); } : undefined}
+          className={phone ? (moreOpen ? "no-drag fixed inset-x-2 bottom-16 z-50 max-h-[65vh] overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-2xl" : "hidden") : "no-drag flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 py-1"}>
+          <div className={phone ? "flex flex-wrap items-stretch gap-1" : "flex w-full items-stretch gap-0.5"}>
         <Group>
           <Tool icon={<HardDrive className="text-primary" />} label="Importa" tip="Importa scheda / cartella" onClick={() => folderInput.current?.click()} />
           <Tool icon={<Images />} label="Apri" tip="Apri più file" onClick={() => multiInput.current?.click()} />
@@ -1072,7 +1131,8 @@ export function LomaViewer() {
           <DevelopPanel
             adjust={adjust} setAdjust={setAdjust} hist={hist} hasImage={!!img}
             onAutoWb={autoWb} onAutoExposure={autoExposure}
-            onAspect={aspectSel} onApplyCrop={() => (cropping ? applyCrop() : startCrop())} onResetCrop={() => { setCrop(null); setSel(null); setCropping(false); }}
+            cropping={cropping} aspect={aspect} sheet={phone}
+            onAspect={aspectSel} onStartCrop={startCrop} onApplyCrop={applyCrop} onCancelCrop={cancelCrop} onResetCrop={() => { setCrop(null); setSel(null); setCropping(false); }}
             onResetAll={() => { setAdjust(defaultAdjust); setCrop(null); setSel(null); setCropping(false); }}
             onClose={() => setToolsOpen(false)}
           />
@@ -1179,16 +1239,36 @@ export function LomaViewer() {
               {cropping && (
                 <div onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
                   className="no-drag absolute bottom-12 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-popover/95 p-2 text-sm shadow-lg">
-                  <span className="px-1 text-muted-foreground">Trascina sulla foto per l'area</span>
+                  <span className="hidden px-1 text-muted-foreground sm:inline">Trascina angoli e lati</span>
                   <button onClick={applyCrop} className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground">Applica ritaglio</button>
                   <button onClick={cancelCrop} className="rounded-md bg-secondary px-3 py-2">Annulla</button>
                 </div>
               )}
-              {sel && (
-                <div
-                  className={`pointer-events-none absolute border-2 border-dashed border-primary ${cropping ? "shadow-[0_0_0_9999px_color-mix(in_oklab,var(--background)_65%,transparent)]" : "bg-primary/10"}`}
+              {sel && !cropping && (
+                <div className="pointer-events-none absolute border-2 border-dashed border-primary bg-primary/10"
+                  style={{ left: off.x + sel.x * scale, top: off.y + sel.y * scale, width: sel.w * scale, height: sel.h * scale }} />
+              )}
+              {sel && cropping && (
+                <div className="absolute z-20 touch-none cursor-move border border-primary shadow-[0_0_0_9999px_color-mix(in_oklab,var(--background)_65%,transparent)]"
                   style={{ left: off.x + sel.x * scale, top: off.y + sel.y * scale, width: sel.w * scale, height: sel.h * scale }}
-                />
+                  onPointerDown={cropPointer("move")} onPointerMove={cropMove} onPointerUp={cropUp} onPointerCancel={cropUp} onDoubleClick={(e) => e.stopPropagation()}>
+                  {/* rule of thirds */}
+                  <div className="pointer-events-none absolute inset-0 opacity-60" style={{ backgroundImage: "linear-gradient(to right, transparent calc(33.33% - 0.5px), var(--primary) calc(33.33% - 0.5px), var(--primary) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px), transparent calc(66.66% - 0.5px), var(--primary) calc(66.66% - 0.5px), var(--primary) calc(66.66% + 0.5px), transparent calc(66.66% + 0.5px)), linear-gradient(to bottom, transparent calc(33.33% - 0.5px), var(--primary) calc(33.33% - 0.5px), var(--primary) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px), transparent calc(66.66% - 0.5px), var(--primary) calc(66.66% - 0.5px), var(--primary) calc(66.66% + 0.5px), transparent calc(66.66% + 0.5px))" }} />
+                  {(["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const).map((hd) => {
+                    const pos: React.CSSProperties = {
+                      left: hd.includes("w") ? 0 : hd.includes("e") ? "100%" : "50%",
+                      top: hd.includes("n") ? 0 : hd.includes("s") ? "100%" : "50%",
+                    };
+                    const corner = hd.length === 2;
+                    const cur = { n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize", ne: "nesw-resize", sw: "nesw-resize", nw: "nwse-resize", se: "nwse-resize" }[hd];
+                    return (
+                      <div key={hd} onPointerDown={cropPointer(hd)} onPointerMove={cropMove} onPointerUp={cropUp} onPointerCancel={cropUp}
+                        className="absolute flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center" style={{ ...pos, cursor: cur }}>
+                        <span className={`rounded-sm bg-primary shadow ${corner ? "h-4 w-4" : hd === "n" || hd === "s" ? "h-1.5 w-6" : "h-6 w-1.5"}`} />
+                      </div>
+                    );
+                  })}
+                </div>
               )}
               <div className="absolute bottom-3 left-3 rounded bg-popover/80 px-2 py-1 text-xs text-muted-foreground">
                 {Math.round(scale * 100)}% · {img.w}×{img.h}{crop ? ` · ritaglio ${Math.round(crop.w)}×${Math.round(crop.h)}` : ""}
@@ -1217,6 +1297,12 @@ export function LomaViewer() {
               </span>
             </button>
           ))}
+          {phone && img && view === "loupe" && (
+            <button aria-label="Informazioni immagine" onPointerDown={(e) => e.stopPropagation()} onClick={() => setInfoOpen(true)}
+              className="absolute left-2 top-2 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-popover/80 text-foreground shadow">
+              <Info className="h-5 w-5" />
+            </button>
+          )}
           {toast && (
             <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md bg-popover px-4 py-2 text-sm shadow-xl">{toast}</div>
           )}
@@ -1228,7 +1314,9 @@ export function LomaViewer() {
         </div>
 
         {/* Side panel */}
-        <aside className="hidden w-80 shrink-0 overflow-y-auto rounded-lg border border-border bg-card md:block">
+        {phone && infoOpen && <div className="fixed inset-0 z-40 bg-background/50" onClick={() => setInfoOpen(false)} />}
+        <aside className={phone ? (infoOpen ? "fixed inset-x-2 bottom-16 z-50 max-h-[70vh] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl" : "hidden") : "hidden w-80 shrink-0 overflow-y-auto rounded-lg border border-border bg-card md:block"}>
+          {phone && <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-3 py-2 text-sm font-medium">Informazioni<button aria-label="Chiudi informazioni" onClick={() => setInfoOpen(false)} className="p-1"><X className="h-4 w-4" /></button></div>}
           <Section icon={<Info className="h-5 w-5" />} title="Informazioni immagine" chevron>
             <div className="flex gap-3">
               <div className="flex h-20 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
@@ -1301,6 +1389,28 @@ export function LomaViewer() {
         />
       )}
 
+      {phone && (
+        <nav className="flex h-14 shrink-0 items-stretch justify-around border-t border-border bg-toolbar px-1">
+          {([
+            [<FolderOpen key="o" className="h-5 w-5" />, "Apri", () => fileInput.current?.click(), false],
+            [view === "grid" ? <Square key="g" className="h-5 w-5" /> : <LayoutGrid key="g" className="h-5 w-5" />, view === "grid" ? "Singola" : "Griglia", () => {
+              if (!session.length) return notify("Importa prima più foto.");
+              if (view === "grid") return openLoupe();
+              setStripOpen(false); setView("grid");
+            }, view === "grid"],
+            [<SlidersHorizontal key="s" className="h-5 w-5" />, "Regola", () => setToolsOpen((o) => !o), toolsOpen],
+            [<Eraser key="e" className="h-5 w-5" />, "Pulisci", deepClean, false],
+            [<Share2 key="c" className="h-5 w-5" />, "Condividi", () => (img ? sharePhoto() : notify("Apri prima un'immagine da condividere.")), false],
+            [<MoreHorizontal key="m" className="h-5 w-5" />, "Altro", () => setMoreOpen((o) => !o), moreOpen],
+          ] as const).map(([ic, l, fn, on]) => (
+            <button key={l} onClick={() => { if (l !== "Altro") setMoreOpen(false); (fn as () => void)(); }}
+              className={`flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] ${on ? "text-primary" : "text-muted-foreground"}`}>
+              {ic}{l}
+            </button>
+          ))}
+        </nav>
+      )}
+      {phone && moreOpen && <div className="fixed inset-0 z-40 bg-background/50" onClick={() => setMoreOpen(false)} />}
       <input ref={fileInput} type="file" accept={ACCEPT} hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) openFile(f); e.target.value = ""; }} />
       <input ref={multiInput} type="file" accept={ACCEPT} multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }} />
       <input

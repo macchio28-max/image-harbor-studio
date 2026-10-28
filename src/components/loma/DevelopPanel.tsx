@@ -1,194 +1,224 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import {
-  ChevronRight, ChevronDown, RotateCcw, Wand2, MoreHorizontal, FolderOpen, Camera, Shapes, Palette,
-  ChevronsRight, RotateCw, FlipHorizontal, Crop as CropIcon, Pipette,
+  RotateCcw, RotateCw, Wand2, FlipHorizontal, FlipVertical, Crop as CropIcon, Pipette, X, Check,
+  Sun, Contrast, SunMoon, CircleDot, Spline, BarChart3, Thermometer, Droplet, Disc3, Grip, Sparkles, CloudFog, Aperture,
+  ChevronUp, ChevronDown,
 } from "lucide-react";
-import { type Adjust, defaultAdjust, HSL_CH, type HslCh, PRESETS, WB_PRESETS, type WbMode, type Tone } from "./develop";
+import { type Adjust, defaultAdjust, monotoneSpline, WB_PRESETS, type WbMode, type Tone } from "./develop";
 
-type Tab = "library" | "tether" | "shape" | "color";
 type SetA = (f: (a: Adjust) => Adjust) => void;
+type AreaId = "crop" | "exp" | "color" | "fx";
+type ToolId =
+  | "cut" | "orient"
+  | "exposure" | "contrast" | "lights" | "wb2" | "curves" | "levels"
+  | "wb" | "vib" | "wheels"
+  | "texture" | "clarity" | "dehaze" | "vig";
 
-const SECTIONS: Record<Tab, string[]> = {
-  library: ["hist", "styles", "layers"],
-  tether: ["hist"],
-  shape: ["hist", "crop", "vig"],
-  color: ["hist", "base", "wb", "exp", "hdr", "clarity", "dehaze", "layers", "vig", "styles", "crop", "cb", "ce", "sharp", "nr"],
-};
+const AREAS: { id: AreaId; label: string; tools: { id: ToolId; label: string; I: any; keys: (keyof Adjust)[] }[] }[] = [
+  { id: "crop", label: "Ritaglio", tools: [
+    { id: "cut", label: "Taglierina", I: CropIcon, keys: ["straighten"] },
+    { id: "orient", label: "Ruota / Rifletti", I: RotateCw, keys: ["rotation", "flipH", "flipV"] },
+  ] },
+  { id: "exp", label: "Esposizione", tools: [
+    { id: "exposure", label: "Esposizione", I: Sun, keys: ["exposure"] },
+    { id: "contrast", label: "Contrasto", I: Contrast, keys: ["contrast"] },
+    { id: "lights", label: "Luci / Ombre", I: SunMoon, keys: ["highlight", "shadow"] },
+    { id: "wb2", label: "Bianchi / Neri", I: CircleDot, keys: ["white", "black"] },
+    { id: "curves", label: "Curve", I: Spline, keys: ["curvePts"] },
+    { id: "levels", label: "Livelli", I: BarChart3, keys: ["lvBlack", "lvWhite", "lvGamma"] },
+  ] },
+  { id: "color", label: "Colore", tools: [
+    { id: "wb", label: "Bilanciamento", I: Thermometer, keys: ["kelvin", "tint", "wbMode"] },
+    { id: "vib", label: "Vividezza", I: Droplet, keys: ["vibrance", "saturation"] },
+    { id: "wheels", label: "Ruote colore", I: Disc3, keys: ["cbShadows", "cbMid", "cbHigh"] },
+  ] },
+  { id: "fx", label: "Effetti", tools: [
+    { id: "texture", label: "Texture", I: Grip, keys: ["texture"] },
+    { id: "clarity", label: "Chiarezza", I: Sparkles, keys: ["clarity"] },
+    { id: "dehaze", label: "Foschia", I: CloudFog, keys: ["dehaze"] },
+    { id: "vig", label: "Vignettatura", I: Aperture, keys: ["vigAmount", "vigMethod"] },
+  ] },
+];
 
-const CH_LABEL: Record<HslCh, string> = { red: "Rosso", orange: "Arancio", yellow: "Giallo", green: "Verde", aqua: "Acqua", blue: "Blu", purple: "Viola", magenta: "Magenta" };
-const CH_COLOR: Record<HslCh, string> = { red: "hsl(0 80% 55%)", orange: "hsl(30 85% 55%)", yellow: "hsl(55 85% 55%)", green: "hsl(120 60% 45%)", aqua: "hsl(180 60% 50%)", blue: "hsl(225 75% 58%)", purple: "hsl(275 60% 58%)", magenta: "hsl(315 65% 58%)" };
+const ASPECTS: [string, number | null][] = [["Libero", null], ["1:1", 1], ["3:2", 3 / 2], ["2:3", 2 / 3], ["4:3", 4 / 3], ["4:5", 4 / 5], ["16:9", 16 / 9]];
 
 export function DevelopPanel(props: {
   adjust: Adjust; setAdjust: SetA; hist: Uint32Array[] | null; hasImage: boolean;
   onAutoWb: () => void; onAutoExposure: () => void;
-  onAspect: (r: number | null) => void; onApplyCrop: () => void; onResetCrop: () => void;
+  cropping: boolean; aspect: number | null;
+  onAspect: (r: number | null) => void; onStartCrop: () => void; onApplyCrop: () => void; onCancelCrop: () => void; onResetCrop: () => void;
   onResetAll: () => void; onClose: () => void;
+  /** Phone: floating resizable bottom sheet instead of a side column. */
+  sheet?: boolean;
 }) {
   const { adjust: a, setAdjust } = props;
-  const [tab, setTab] = useState<Tab>("color");
-  const [open, setOpen] = useState<Record<string, boolean>>({ hist: true, wb: true, exp: true, hdr: true, vig: true });
-  const [ceCh, setCeCh] = useState<HslCh>("red");
+  const [area, setArea] = useState<AreaId>("exp");
+  const [tool, setTool] = useState<Record<AreaId, ToolId>>({ crop: "cut", exp: "exposure", color: "wb", fx: "texture" });
+  const [h, setH] = useState(42); // sheet height in vh
+  const drag = useRef<{ y: number; h: number } | null>(null);
+  const cur = AREAS.find((x) => x.id === area)!;
+  const t = cur.tools.find((x) => x.id === tool[area])!;
   const set = <K extends keyof Adjust>(k: K, v: Adjust[K]) => setAdjust((x) => ({ ...x, [k]: v }));
-  const reset = (...keys: (keyof Adjust)[]) => setAdjust((x) => { const n: any = { ...x }; keys.forEach((k) => (n[k] = structuredClone(defaultAdjust[k]))); return n; });
-  const show = (id: string) => SECTIONS[tab].includes(id);
-
-  const ctx: Ctx = { show, open, toggle: (id) => setOpen((o) => ({ ...o, [id]: !o[id] })), reset, resetAll: props.onResetAll };
+  const reset = (keys: (keyof Adjust)[]) => setAdjust((x) => { const n: any = { ...x }; keys.forEach((k) => (n[k] = structuredClone(defaultAdjust[k]))); return n; });
   const S = (label: string, k: keyof Adjust, min: number, max: number, step = 1, track?: string) => (
-    <Slider label={label} value={a[k] as number} min={min} max={max} step={step} track={track}
-      def={defaultAdjust[k] as number}
+    <Slider label={label} value={a[k] as number} min={min} max={max} step={step} track={track} def={defaultAdjust[k] as number}
       onChange={(v) => setAdjust((x) => ({ ...x, [k]: v, ...(k === "kelvin" || k === "tint" ? { wbMode: "custom" as WbMode } : {}) }))} />
   );
-  const tone = (label: string, k: "cbShadows" | "cbMid" | "cbHigh") => {
-    const t = a[k] as Tone;
-    return (
-      <div className="space-y-1">
-        <div className="text-xs font-medium text-muted-foreground">{label}</div>
-        <Slider label="Tonalità" value={t.h} min={0} max={360} def={0} track="linear-gradient(90deg,hsl(0 80% 55%),hsl(60 80% 55%),hsl(120 80% 45%),hsl(180 80% 50%),hsl(240 80% 60%),hsl(300 80% 55%),hsl(360 80% 55%))" onChange={(v) => set(k, { ...t, h: v })} />
-        <Slider label="Quantità" value={t.a} min={0} max={100} def={0} onChange={(v) => set(k, { ...t, a: v })} />
-      </div>
-    );
-  };
 
-  return (
-    <aside onPointerDown={(e) => e.stopPropagation()} className="flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
-      <div className="flex items-center border-b border-border px-1 py-1">
-        {([["library", "LIBRARY", FolderOpen], ["tether", "TETHER", Camera], ["shape", "SHAPE", Shapes], ["color", "COLOR", Palette]] as const).map(([id, l, I]) => (
-          <button key={id} onClick={() => setTab(id)} className={`flex flex-1 flex-col items-center gap-0.5 rounded px-1 py-1 text-[10px] tracking-wide ${tab === id ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-            <I className="h-5 w-5" strokeWidth={1.4} />{l}
+  const body = (() => {
+    switch (t.id) {
+      case "cut": return (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-1">
+            {ASPECTS.map(([l, r]) => (
+              <button key={l} onClick={() => props.onAspect(r)} className={`rounded border px-2 py-1 text-xs ${props.aspect === r ? "border-primary bg-primary/20 text-foreground" : "border-border bg-secondary hover:bg-accent"}`}>{l}</button>
+            ))}
+          </div>
+          {S("Raddrizza", "straighten", -45, 45, 0.1)}
+          {props.cropping ? (
+            <div className="flex gap-2">
+              <button onClick={props.onApplyCrop} className="inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-primary py-2 text-sm font-medium text-primary-foreground"><Check className="h-4 w-4" /> Applica</button>
+              <button onClick={props.onCancelCrop} className="rounded-md bg-secondary px-3 py-2 text-sm">Annulla</button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <button onClick={props.onStartCrop} className="inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-primary py-2 text-sm font-medium text-primary-foreground"><CropIcon className="h-4 w-4" /> Ritaglia / Modifica</button>
+              <button onClick={props.onResetCrop} className="rounded-md bg-secondary px-3 py-2 text-sm">Rimuovi</button>
+            </div>
+          )}
+          <p className="text-[11px] text-muted-foreground">Trascina angoli e lati per ridimensionare, l'interno per spostare. Puoi riaprire il ritaglio e modificarlo quando vuoi.</p>
+        </div>
+      );
+      case "orient": return (
+        <div className="grid grid-cols-2 gap-2">
+          <Big onClick={() => set("rotation", a.rotation - 90)} I={RotateCcw} l="Ruota 90° sx" />
+          <Big onClick={() => set("rotation", a.rotation + 90)} I={RotateCw} l="Ruota 90° dx" />
+          <Big onClick={() => set("flipH", !a.flipH)} I={FlipHorizontal} l="Rifletti orizz." on={a.flipH} />
+          <Big onClick={() => set("flipV", !a.flipV)} I={FlipVertical} l="Rifletti vert." on={a.flipV} />
+        </div>
+      );
+      case "exposure": return <>{S("Esposizione", "exposure", -3, 3, 0.01)}<Hint>Le alte luci vengono compresse dolcemente: niente bianchi bruciati.</Hint></>;
+      case "contrast": return S("Contrasto", "contrast", -100, 100);
+      case "lights": return <>{S("Alte luci", "highlight", -100, 100)}{S("Ombre", "shadow", -100, 100)}</>;
+      case "wb2": return <>{S("Bianchi", "white", -100, 100)}{S("Neri", "black", -100, 100)}</>;
+      case "curves": return <CurveEditor pts={a.curvePts} hist={props.hist} onChange={(p) => set("curvePts", p)} />;
+      case "levels": return (
+        <>
+          <Histogram hist={props.hist} />
+          {S("Nero input", "lvBlack", 0, 120)}{S("Gamma", "lvGamma", 0.3, 3, 0.01)}{S("Bianco input", "lvWhite", 135, 255)}
+        </>
+      );
+      case "wb": return (
+        <>
+          <div className="flex gap-1">
+            <select className="sel" value={a.wbMode} onChange={(e) => {
+              const m = e.target.value as WbMode;
+              if (m === "auto") return props.onAutoWb();
+              setAdjust((x) => ({ ...x, wbMode: m, ...(m in WB_PRESETS ? { kelvin: WB_PRESETS[m as keyof typeof WB_PRESETS], tint: 0 } : {}) }));
+            }}>
+              <option value="asShot">Come scattata</option><option value="auto">Auto</option><option value="daylight">Luce diurna</option>
+              <option value="cloudy">Nuvoloso</option><option value="shade">Ombra</option><option value="tungsten">Tungsteno</option>
+              <option value="fluorescent">Fluorescente</option><option value="flash">Flash</option><option value="custom">Personalizzato</option>
+            </select>
+            <button title="Auto" onClick={props.onAutoWb} className="rounded border border-border px-2"><Pipette className="h-3.5 w-3.5" /></button>
+          </div>
+          {S("Temperatura", "kelvin", 2000, 12000, 10, "linear-gradient(90deg,hsl(225 80% 55%),hsl(0 0% 85%),hsl(45 90% 55%))")}
+          {S("Tinta", "tint", -100, 100, 1, "linear-gradient(90deg,hsl(120 60% 45%),hsl(0 0% 85%),hsl(310 65% 58%))")}
+        </>
+      );
+      case "vib": return <>{S("Vividezza", "vibrance", -100, 100)}{S("Saturazione", "saturation", -100, 100)}</>;
+      case "wheels": return (
+        <div className="grid grid-cols-3 gap-2">
+          {([["Ombre", "cbShadows"], ["Medi", "cbMid"], ["Alte luci", "cbHigh"]] as const).map(([l, k]) => (
+            <ColorWheel key={k} label={l} value={a[k]} onChange={(v) => set(k, v)} />
+          ))}
+        </div>
+      );
+      case "texture": return S("Texture", "texture", -100, 100);
+      case "clarity": return S("Chiarezza", "clarity", -100, 100);
+      case "dehaze": return S("Rimozione foschia", "dehaze", -100, 100);
+      case "vig": return (
+        <>
+          {S("Quantità", "vigAmount", -3, 3, 0.01)}
+          <div className="flex gap-1">
+            {(["elliptic", "circular"] as const).map((m) => (
+              <button key={m} onClick={() => set("vigMethod", m)} className={`rounded border px-2 py-1 text-xs ${a.vigMethod === m ? "border-primary bg-primary/20" : "border-border bg-secondary"}`}>{m === "elliptic" ? "Ellittica" : "Circolare"}</button>
+            ))}
+          </div>
+        </>
+      );
+    }
+  })();
+
+  const content = (
+    <>
+      {/* Area tabs */}
+      <div className="flex items-center border-b border-border bg-secondary/40">
+        {AREAS.map((x) => (
+          <button key={x.id} onClick={() => setArea(x.id)} className={`flex-1 border-b-2 px-1 py-2 text-xs font-medium ${area === x.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{x.label}</button>
+        ))}
+        <button onClick={props.onClose} title="Chiudi pannello" className="px-2 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+      </div>
+      {/* Tool tiles (Photoshop "Regolazioni singole") */}
+      <div className="grid grid-cols-3 gap-0.5 border-b border-border p-1.5">
+        {cur.tools.map((x) => (
+          <button key={x.id} onClick={() => setTool((o) => ({ ...o, [area]: x.id }))}
+            className={`flex flex-col items-center gap-1 rounded px-1 py-1.5 text-[11px] leading-tight ${tool[area] === x.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"}`}>
+            <x.I className="h-5 w-5" strokeWidth={1.5} />{x.label}
           </button>
         ))}
-        <button onClick={props.onClose} title="Chiudi pannello" className="px-2 text-chart-3"><ChevronsRight className="h-5 w-5 rotate-180" /></button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto text-sm">
-        {!props.hasImage && <p className="px-3 py-2 text-xs text-muted-foreground">Apri un'immagine per usare le regolazioni.</p>}
-        <Sec c={ctx} id="hist" title="Histogram"><Histogram hist={props.hist} /></Sec>
-        {tab === "tether" && <p className="px-3 py-3 text-xs text-muted-foreground">Lo scatto collegato (tethering) a una fotocamera richiede la versione desktop di LoMa VIEWER con fotocamera connessa via USB.</p>}
-        <Sec c={ctx} id="base" title="Base Characteristics" keys={["curve"]}>
-          <Row label="Profilo ICC"><select className="sel" disabled><option>sRGB (incorporato)</option></select></Row>
-          <Row label="Curva">
-            <select className="sel" value={a.curve} onChange={(e) => set("curve", e.target.value as Adjust["curve"])}>
-              <option value="linear">Lineare</option><option value="standard">Film Standard</option><option value="high">Film Contrasto Alto</option>
-            </select>
-          </Row>
-        </Sec>
-        <Sec c={ctx} id="wb" title="White Balance" keys={["kelvin", "tint", "wbMode"]} auto={props.onAutoWb}>
-          <Row label="Mode">
-            <div className="flex gap-1">
-              <select className="sel" value={a.wbMode} onChange={(e) => {
-                const m = e.target.value as WbMode;
-                if (m === "auto") return props.onAutoWb();
-                setAdjust((x) => ({ ...x, wbMode: m, ...(m in WB_PRESETS ? { kelvin: WB_PRESETS[m as keyof typeof WB_PRESETS], tint: 0 } : {}) }));
-              }}>
-                <option value="asShot">Come scattata</option><option value="auto">Auto</option><option value="daylight">Luce diurna</option>
-                <option value="cloudy">Nuvoloso</option><option value="shade">Ombra</option><option value="tungsten">Tungsteno</option>
-                <option value="fluorescent">Fluorescente</option><option value="flash">Flash</option><option value="custom">Personalizzato</option>
-              </select>
-              <button title="Auto (contagocce neutro)" onClick={props.onAutoWb} className="rounded border border-border px-1.5"><Pipette className="h-3.5 w-3.5" /></button>
+      {/* Only the selected tool */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 text-sm">
+        {!props.hasImage ? <p className="text-xs text-muted-foreground">Apri un'immagine per usare le regolazioni.</p> : (
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-1">
+              <span className="flex-1 text-[13px] font-medium">{t.label}</span>
+              {t.id === "exposure" && <HBtn title="Auto" onClick={props.onAutoExposure}><Wand2 className="h-3.5 w-3.5" /></HBtn>}
+              <HBtn title="Ripristina strumento" onClick={() => reset(t.keys)}><RotateCcw className="h-3.5 w-3.5" /></HBtn>
             </div>
-          </Row>
-          {S("Kelvin", "kelvin", 2000, 12000, 10, "linear-gradient(90deg,hsl(225 80% 55%),hsl(0 0% 85%),hsl(55 90% 55%))")}
-          {S("Tint", "tint", -100, 100, 1, "linear-gradient(90deg,hsl(120 60% 45%),hsl(0 0% 85%),hsl(310 65% 58%))")}
-        </Sec>
-        <Sec c={ctx} id="exp" title="Exposure" keys={["exposure", "contrast", "brightness", "saturation"]} auto={props.onAutoExposure}>
-          {S("Exposure", "exposure", -4, 4, 0.01)}{S("Contrast", "contrast", -100, 100)}{S("Brightness", "brightness", -100, 100)}{S("Saturation", "saturation", -100, 100)}
-        </Sec>
-        <Sec c={ctx} id="hdr" title="High Dynamic Range" keys={["highlight", "shadow", "white", "black"]}>
-          {S("Highlight", "highlight", -100, 100)}{S("Shadow", "shadow", -100, 100)}{S("White", "white", -100, 100)}{S("Black", "black", -100, 100)}
-        </Sec>
-        <Sec c={ctx} id="clarity" title="Clarity & Structure" keys={["clarity", "structure"]}>
-          {S("Clarity", "clarity", -100, 100)}{S("Structure", "structure", -100, 100)}
-        </Sec>
-        <Sec c={ctx} id="dehaze" title="Dehaze" keys={["dehaze"]}>{S("Amount", "dehaze", -100, 100)}</Sec>
-        <Sec c={ctx} id="layers" title="Layers" keys={["layerOpacity"]}>
-          <div className="rounded border border-border bg-background/40 px-2 py-1 text-xs">Sfondo · Livello di regolazione</div>
-          {S("Opacità", "layerOpacity", 0, 100)}
-        </Sec>
-        <Sec c={ctx} id="vig" title="Vignetting" keys={["vigAmount", "vigMethod"]}>
-          {S("Amount", "vigAmount", -4, 4, 0.01)}
-          <Row label="Method">
-            <select className="sel" value={a.vigMethod} onChange={(e) => set("vigMethod", e.target.value as Adjust["vigMethod"])}>
-              <option value="elliptic">Elliptic on Crop</option><option value="circular">Circular</option>
-            </select>
-          </Row>
-        </Sec>
-        <Sec c={ctx} id="styles" title="Styles and Presets">
-          <div className="grid grid-cols-2 gap-1.5">
-            {PRESETS.map((p) => (
-              <button key={p.name} onClick={() => setAdjust((x) => ({ ...x, ...p.set }))} className="rounded border border-border bg-secondary px-2 py-1.5 text-xs hover:bg-accent">{p.name}</button>
-            ))}
+            {body}
           </div>
-        </Sec>
-        <Sec c={ctx} id="crop" title="Crop" keys={["straighten", "rotation", "flipH"]}>
-          <Row label="Rapporto">
-            <select className="sel" defaultValue="" onChange={(e) => props.onAspect(e.target.value ? +e.target.value : null)}>
-              <option value="">Libero (Seleziona)</option><option value="1">1:1</option><option value={3 / 2}>3:2</option><option value={4 / 3}>4:3</option>
-              <option value={16 / 9}>16:9</option><option value={5 / 4}>5:4</option><option value={2 / 3}>2:3</option><option value={4 / 5}>4:5</option>
-            </select>
-          </Row>
-          {S("Rotazione", "straighten", -45, 45, 0.1)}
-          <div className="flex gap-1.5 pt-1">
-            <MiniB title="Ruota a sinistra" onClick={() => set("rotation", a.rotation - 90)}><RotateCcw className="h-4 w-4" /></MiniB>
-            <MiniB title="Ruota a destra" onClick={() => set("rotation", a.rotation + 90)}><RotateCw className="h-4 w-4" /></MiniB>
-            <MiniB title="Specchia" onClick={() => set("flipH", !a.flipH)}><FlipHorizontal className="h-4 w-4" /></MiniB>
-            <MiniB title="Applica ritaglio" onClick={props.onApplyCrop}><CropIcon className="h-4 w-4" /> Ritaglia</MiniB>
-            <MiniB title="Annulla ritaglio" onClick={props.onResetCrop}>✕</MiniB>
-          </div>
-          <p className="text-[11px] text-muted-foreground">Rapporto libero: usa "Seleziona" e trascina sull'immagine.</p>
-        </Sec>
-        <Sec c={ctx} id="cb" title="Color Balance" keys={["cbShadows", "cbMid", "cbHigh"]}>
-          {tone("Shadows", "cbShadows")}{tone("Midtones", "cbMid")}{tone("Highlights", "cbHigh")}
-        </Sec>
-        <Sec c={ctx} id="ce" title="Color Editor" keys={["hsl"]}>
-          <div className="flex flex-wrap gap-1">
-            {HSL_CH.map((c) => (
-              <button key={c} title={CH_LABEL[c]} onClick={() => setCeCh(c)} className={`h-6 w-6 rounded-full border-2 ${ceCh === c ? "border-foreground" : "border-transparent"}`} style={{ background: CH_COLOR[c] }} />
-            ))}
-          </div>
-          <div className="text-xs text-muted-foreground">{CH_LABEL[ceCh]}</div>
-          {(["h", "s", "l"] as const).map((p) => (
-            <Slider key={p} label={{ h: "Tonalità", s: "Saturazione", l: "Luminosità" }[p]} value={a.hsl[ceCh][p]} min={-100} max={100} def={0}
-              onChange={(v) => setAdjust((x) => ({ ...x, hsl: { ...x.hsl, [ceCh]: { ...x.hsl[ceCh], [p]: v } } }))} />
-          ))}
-        </Sec>
-        <Sec c={ctx} id="sharp" title="Sharpening" keys={["sharpAmount", "sharpRadius"]}>
-          {S("Amount", "sharpAmount", 0, 100)}{S("Radius", "sharpRadius", 0.3, 5, 0.1)}
-        </Sec>
-        <Sec c={ctx} id="nr" title="Noise Reduction" keys={["nrLum", "nrColor"]}>
-          {S("Luminance", "nrLum", 0, 100)}{S("Color", "nrColor", 0, 100)}
-        </Sec>
+        )}
       </div>
-      <button onClick={props.onResetAll} className="m-2 rounded-md border border-border py-1.5 text-sm hover:bg-accent">Ripristina tutte le regolazioni</button>
+      <button onClick={props.onResetAll} className="m-2 rounded-md border border-border py-1.5 text-xs hover:bg-accent">Ripristina tutte le regolazioni</button>
+    </>
+  );
+
+  if (props.sheet) {
+    return (
+      <div onPointerDown={(e) => e.stopPropagation()} style={{ height: `${h}vh` }}
+        className="fixed inset-x-2 bottom-16 z-50 flex flex-col overflow-hidden rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur">
+        <div className="flex touch-none items-center justify-center gap-3 py-1"
+          onPointerDown={(e) => { (e.target as Element).setPointerCapture(e.pointerId); drag.current = { y: e.clientY, h }; }}
+          onPointerMove={(e) => { const d = drag.current; if (d) setH(Math.min(80, Math.max(18, d.h - ((e.clientY - d.y) / window.innerHeight) * 100))); }}
+          onPointerUp={() => { drag.current = null; }}>
+          <button aria-label="Rimpicciolisci" onClick={() => setH((v) => Math.max(18, v - 20))} className="p-1 text-muted-foreground"><ChevronDown className="h-4 w-4" /></button>
+          <span className="h-1.5 w-12 rounded-full bg-muted-foreground/50" />
+          <button aria-label="Ingrandisci" onClick={() => setH((v) => Math.min(80, v + 20))} className="p-1 text-muted-foreground"><ChevronUp className="h-4 w-4" /></button>
+        </div>
+        {content}
+      </div>
+    );
+  }
+  return (
+    <aside onPointerDown={(e) => e.stopPropagation()} className="flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+      <div className="border-b border-border p-2"><Histogram hist={props.hist} /></div>
+      {content}
     </aside>
   );
 }
 
-type Ctx = { show: (id: string) => boolean; open: Record<string, boolean>; toggle: (id: string) => void; reset: (...k: (keyof Adjust)[]) => void; resetAll: () => void };
-function Sec({ c, id, title, keys, auto, children }: { c: Ctx; id: string; title: string; keys?: (keyof Adjust)[]; auto?: () => void; children: ReactNode }) {
-  if (!c.show(id)) return null;
-  return (
-    <div className="border-b border-border/70">
-      <div className="flex items-center gap-1 bg-secondary/60 px-2 py-1.5">
-        <button className="flex flex-1 items-center gap-1 text-left text-[13px]" onClick={() => c.toggle(id)}>
-          {c.open[id] ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
-          {title}
-        </button>
-        {auto && <HBtn title="Auto" onClick={auto}><Wand2 className="h-3.5 w-3.5" /></HBtn>}
-        {keys && <HBtn title="Ripristina sezione" onClick={() => c.reset(...keys)}><RotateCcw className="h-3.5 w-3.5" /></HBtn>}
-        <HBtn title="Ripristina tutto" onClick={c.resetAll}><MoreHorizontal className="h-3.5 w-3.5" /></HBtn>
-      </div>
-      {c.open[id] && <div className="space-y-1.5 px-3 py-2.5">{children}</div>}
-    </div>
-  );
-}
-
+function Hint({ children }: { children: ReactNode }) { return <p className="text-[11px] text-muted-foreground">{children}</p>; }
 function HBtn({ children, title, onClick }: { children: ReactNode; title: string; onClick: () => void }) {
   return <button title={title} onClick={onClick} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">{children}</button>;
 }
-function MiniB({ children, title, onClick }: { children: ReactNode; title: string; onClick: () => void }) {
-  return <button title={title} onClick={onClick} className="inline-flex items-center gap-1 rounded border border-border bg-secondary px-2 py-1 text-xs hover:bg-accent">{children}</button>;
-}
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="grid grid-cols-[72px_1fr] items-center gap-2 text-xs"><span className="text-right text-muted-foreground">{label}</span>{children}</div>;
+function Big({ I, l, onClick, on }: { I: any; l: string; onClick: () => void; on?: boolean }) {
+  return (
+    <button onClick={onClick} className={`flex flex-col items-center gap-1 rounded-md border py-3 text-xs ${on ? "border-primary bg-primary/20" : "border-border bg-secondary hover:bg-accent"}`}>
+      <I className="h-5 w-5" />{l}
+    </button>
+  );
 }
 
 function Slider({ label, value, min, max, step = 1, def, track, onChange }: {
@@ -196,21 +226,99 @@ function Slider({ label, value, min, max, step = 1, def, track, onChange }: {
 }) {
   const dec = step < 1 ? (step < 0.1 ? 2 : 1) : 0;
   return (
-    <div className="grid grid-cols-[72px_1fr_52px] items-center gap-2 text-xs">
-      <span className="text-right text-muted-foreground" onDoubleClick={() => onChange(def)} title="Doppio clic per ripristinare">{label}</span>
-      <input type="range" min={min} max={max} step={step} value={value}
-        onDoubleClick={() => onChange(def)}
-        onChange={(e) => onChange(+e.target.value)}
-        className="loma-range" style={track ? { ["--track" as any]: track } : undefined} />
-      <input type="number" value={Number(value.toFixed(dec))} step={step} min={min} max={max}
-        onChange={(e) => { const v = +e.target.value; if (!Number.isNaN(v)) onChange(Math.min(max, Math.max(min, v))); }}
-        className="w-full rounded bg-background/60 px-1 py-0.5 text-right tabular-nums" />
+    <div className="space-y-1 text-xs">
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground" onDoubleClick={() => onChange(def)} title="Doppio clic per ripristinare">{label}</span>
+        <input type="number" value={Number(value.toFixed(dec))} step={step} min={min} max={max}
+          onChange={(e) => { const v = +e.target.value; if (!Number.isNaN(v)) onChange(Math.min(max, Math.max(min, v))); }}
+          className="w-16 rounded bg-background/60 px-1 py-0.5 text-right tabular-nums" />
+      </div>
+      <input type="range" min={min} max={max} step={step} value={value} onDoubleClick={() => onChange(def)}
+        onChange={(e) => onChange(+e.target.value)} className="loma-range w-full" style={track ? { ["--track" as any]: track } : undefined} />
+    </div>
+  );
+}
+
+/** Master RGB curve: drag points, tap the line to add, double-tap a point to remove. */
+function CurveEditor({ pts, hist, onChange }: { pts: [number, number][]; hist: Uint32Array[] | null; onChange: (p: [number, number][]) => void }) {
+  const svg = useRef<SVGSVGElement>(null);
+  const dragI = useRef<number | null>(null);
+  const S = 200;
+  const pos = (e: React.PointerEvent) => {
+    const r = svg.current!.getBoundingClientRect();
+    return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, 1 - (e.clientY - r.top) / r.height))] as [number, number];
+  };
+  const sp = monotoneSpline(pts);
+  let d = ""; for (let i = 0; i <= 100; i++) { const x = i / 100; d += `${i ? "L" : "M"}${x * S},${(1 - sp(x)) * S}`; }
+  return (
+    <div className="space-y-1">
+      <svg ref={svg} viewBox={`0 0 ${S} ${S}`} className="aspect-square w-full touch-none rounded bg-background/60"
+        onPointerDown={(e) => {
+          (e.target as Element).setPointerCapture?.(e.pointerId);
+          const [x, y] = pos(e);
+          let idx = pts.findIndex((p) => Math.hypot(p[0] - x, p[1] - y) < 0.06);
+          if (idx < 0) { const n = [...pts, [x, sp(x)] as [number, number]].sort((a, b) => a[0] - b[0]); idx = n.findIndex((p) => p[0] === x); onChange(n); }
+          dragI.current = idx;
+        }}
+        onPointerMove={(e) => {
+          const i = dragI.current; if (i == null) return;
+          const [x, y] = pos(e); const n = pts.map((p) => [...p] as [number, number]);
+          const lo = i === 0 ? 0 : n[i - 1]![0] + 0.01, hi = i === n.length - 1 ? 1 : n[i + 1]![0] - 0.01;
+          n[i] = [i === 0 ? 0 : i === n.length - 1 ? 1 : Math.min(hi, Math.max(lo, x)), y];
+          onChange(n);
+        }}
+        onPointerUp={() => { dragI.current = null; }}
+        onDoubleClick={(e) => {
+          const [x, y] = pos(e as any);
+          const i = pts.findIndex((p) => Math.hypot(p[0] - x, p[1] - y) < 0.06);
+          if (i > 0 && i < pts.length - 1) onChange(pts.filter((_, j) => j !== i));
+        }}>
+        {hist && <HistPath hist={hist} S={S} />}
+        {[0.25, 0.5, 0.75].map((g) => <g key={g} stroke="currentColor" className="text-border" strokeWidth={0.5}><line x1={g * S} y1={0} x2={g * S} y2={S} /><line x1={0} y1={g * S} x2={S} y2={g * S} /></g>)}
+        <line x1={0} y1={S} x2={S} y2={0} stroke="currentColor" className="text-muted-foreground/40" strokeDasharray="3 3" />
+        <path d={d} fill="none" stroke="currentColor" className="text-foreground" strokeWidth={1.5} />
+        {pts.map((p, i) => <circle key={i} cx={p[0] * S} cy={(1 - p[1]) * S} r={5} className="fill-primary stroke-background" strokeWidth={1.5} />)}
+      </svg>
+      <Hint>Tocca la curva per aggiungere un punto, trascinalo per regolare, doppio tocco per eliminarlo.</Hint>
+    </div>
+  );
+}
+function HistPath({ hist, S }: { hist: Uint32Array[]; S: number }) {
+  let max = 1; const l = new Float32Array(256);
+  for (let i = 0; i < 256; i++) { l[i] = (hist[0]![i]! + hist[1]![i]! + hist[2]![i]!) / 3; if (i > 1 && i < 254) max = Math.max(max, l[i]!); }
+  let d = `M0,${S}`; for (let i = 0; i < 256; i++) d += ` L${(i / 255) * S},${S - Math.min(S, (l[i]! / max) * S * 0.9)}`;
+  return <path d={d + ` L${S},${S} Z`} className="fill-muted-foreground/20" />;
+}
+
+/** Colour wheel: angle = hue, distance from centre = strength. */
+function ColorWheel({ label, value, onChange }: { label: string; value: Tone; onChange: (t: Tone) => void }) {
+  const el = useRef<HTMLDivElement>(null);
+  const pick = (e: React.PointerEvent) => {
+    const r = el.current!.getBoundingClientRect();
+    const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    const rad = Math.min(1, Math.hypot(dx, dy) / (r.width / 2));
+    const h = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    onChange({ h: Math.round(h), a: Math.round(rad * 100) });
+  };
+  const ang = (value.h * Math.PI) / 180, rr = value.a / 100;
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div ref={el} className="relative aspect-square w-full touch-none rounded-full"
+        style={{ background: "radial-gradient(circle, hsl(0 0% 60%) 0%, transparent 70%), conic-gradient(from 0deg, hsl(0 70% 50%), hsl(60 70% 50%), hsl(120 70% 45%), hsl(180 70% 45%), hsl(240 70% 55%), hsl(300 70% 50%), hsl(360 70% 50%))" }}
+        onPointerDown={(e) => { (e.target as Element).setPointerCapture(e.pointerId); pick(e); }}
+        onPointerMove={(e) => { if (e.buttons || e.pointerType === "touch") pick(e); }}
+        onDoubleClick={() => onChange({ h: 0, a: 0 })}>
+        <span className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-foreground bg-background shadow"
+          style={{ left: `${50 + Math.sin(ang) * rr * 50}%`, top: `${50 - Math.cos(ang) * rr * 50}%` }} />
+      </div>
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="text-[10px] tabular-nums text-muted-foreground">{value.a}%</span>
     </div>
   );
 }
 
 function Histogram({ hist }: { hist: any[] | null }) {
-  if (!hist) return <div className="h-24 rounded bg-background/60" />;
+  if (!hist) return <div className="h-20 rounded bg-background/60" />;
   let max = 1;
   for (const ch of hist) for (let i = 2; i < 254; i++) max = Math.max(max, ch[i]);
   const path = (ch: any) => {
@@ -219,7 +327,7 @@ function Histogram({ hist }: { hist: any[] | null }) {
     return p + " L255,100 Z";
   };
   return (
-    <svg viewBox="0 0 256 100" preserveAspectRatio="none" className="h-24 w-full rounded bg-background/60" style={{ mixBlendMode: "normal" }}>
+    <svg viewBox="0 0 256 100" preserveAspectRatio="none" className="h-20 w-full rounded bg-background/60">
       <g style={{ mixBlendMode: "screen" }}>
         <path d={path(hist[0])} fill="hsl(0 80% 55% / 0.55)" />
         <path d={path(hist[1])} fill="hsl(120 70% 45% / 0.55)" />
@@ -228,3 +336,4 @@ function Histogram({ hist }: { hist: any[] | null }) {
     </svg>
   );
 }
+
