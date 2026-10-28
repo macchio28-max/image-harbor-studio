@@ -148,14 +148,16 @@ export const isNeutral = (a: Adjust) => JSON.stringify({ ...a, rotation: 0, flip
  * Develops `source` at size w×h. `pxScale` = w / original width (to keep radii consistent).
  * Returns a new canvas with the result plus RGB histogram.
  */
-export function developCanvas(source: CanvasImageSource, w: number, h: number, a: Adjust, pxScale = 1, wantHist = false) {
+export type Region = { fullW: number; fullH: number; ox: number; oy: number };
+export function developCanvas(source: CanvasImageSource, w: number, h: number, a: Adjust, pxScale = 1, wantHist = false, region?: Region) {
   const base = document.createElement("canvas");
   base.width = w; base.height = h;
   const bctx = base.getContext("2d", { willReadFrequently: true })!;
   bctx.drawImage(source, 0, 0, w, h);
   const img = bctx.getImageData(0, 0, w, h);
   const d: any = img.data;
-  const long = Math.max(w, h);
+  const fullW = region?.fullW ?? w, fullH = region?.fullH ?? h, ox = region?.ox ?? 0, oy = region?.oy ?? 0;
+  const long = Math.max(fullW, fullH);
 
   const needLocal = a.clarity !== 0;
   const needStruct = a.structure !== 0 || a.texture !== 0;
@@ -185,7 +187,7 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
   const hist: any = wantHist ? [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)] : null;
 
   for (let y = 0; y < h; y++) {
-    const dy = (y / h - 0.5) * 2;
+    const dy = ((y + oy) / fullH - 0.5) * 2;
     for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 4;
       const r0 = d[i] / 255, g0 = d[i + 1] / 255, b0 = d[i + 2] / 255;
@@ -269,8 +271,8 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
       }
 
       if (vig) {
-        let dx = (x / w - 0.5) * 2, dyy = dy;
-        if (a.vigMethod === "circular") { const ar = w / h; if (ar > 1) dx *= ar; else dyy /= ar; }
+        let dx = ((x + ox) / fullW - 0.5) * 2, dyy = dy;
+        if (a.vigMethod === "circular") { const ar = fullW / fullH; if (ar > 1) dx *= ar; else dyy /= ar; }
         const dist = Math.sqrt(dx * dx + dyy * dyy) / 1.4142;
         const f = Math.pow(2, vig * sstep(0.3, 1, dist));
         r *= f; g *= f; b *= f;
@@ -309,4 +311,31 @@ export function autoMeasure(source: CanvasImageSource, w: number, h: number) {
   const Y = 0.2126 * mr + 0.7152 * mg + 0.0722 * mb;
   const exposure = Math.round(Math.min(2, Math.max(-2, Math.log2(0.42 / Math.max(0.01, Y)))) * 100) / 100;
   return { kelvin, tint, exposure };
+}
+
+/**
+ * Full-resolution develop split into horizontal bands (with blur-safe overlap), yielding to the
+ * browser between bands so the UI stays fluid. Returns null if `stale()` turns true (superseded).
+ */
+export async function developCanvasAsync(source: CanvasImageSource, w: number, h: number, a: Adjust, stale: () => boolean) {
+  const out = document.createElement("canvas");
+  out.width = w; out.height = h;
+  const octx = out.getContext("2d")!;
+  const long = Math.max(w, h);
+  const pad = Math.ceil(Math.max(long * 0.015, a.sharpRadius, 2) * 3) + 2;
+  const band = Math.max(64, Math.round(2_000_000 / w));
+  const tmp = document.createElement("canvas");
+  for (let y0 = 0; y0 < h; y0 += band) {
+    await new Promise((r) => setTimeout(r, 0));
+    if (stale()) return null;
+    const top = Math.max(0, y0 - pad), bot = Math.min(h, y0 + band + pad), bh = bot - top;
+    tmp.width = w; tmp.height = bh;
+    const t = tmp.getContext("2d")!;
+    t.clearRect(0, 0, w, bh);
+    t.drawImage(source, 0, top, w, bh, 0, 0, w, bh);
+    const { canvas } = developCanvas(tmp, w, bh, a, 1, false, { fullW: w, fullH: h, ox: 0, oy: top });
+    const rows = Math.min(band, h - y0);
+    octx.drawImage(canvas, 0, y0 - top, w, rows, 0, y0, w, rows);
+  }
+  return stale() ? null : out;
 }
