@@ -22,7 +22,7 @@ import * as B from "./brand-icons";
 import { DevelopPanel } from "./DevelopPanel";
 import { Filmstrip } from "./Filmstrip";
 import { ComparePane } from "./ComparePane";
-import { MailChoice, WEBMAIL_PRESETS } from "./MailChoice";
+import { MailChoice, WEBMAIL_PRESETS, serviceOf, type MailAccount } from "./MailChoice";
 import { ContactSheet } from "./ContactSheet";
 import { ProvenancePanel } from "./ProvenancePanel";
 import { type CullItem, type CullFilter, IMAGE_RE, readCull, readCullTags, applyFilter } from "./culling";
@@ -724,15 +724,18 @@ export function LomaViewer() {
     else sonnerToast.error("Copia non riuscita: trascina la foto nella chat di WhatsApp.");
   };
 
-  // Mail: desktop mail app or webmail (remembered), photo copied to clipboard for pasting.
-  const mail = async () => {
-    if (isTouchDevice()) return share("Mail", "mailto:?subject=Immagine%20da%20LoMa%20VIEWER");
+  // Mail: every click shows the saved accounts; the chosen one opens its app (Android) or webmail with the photo.
+  const mail = async (acc?: MailAccount) => {
     if (!img) { notify("Apri prima un'immagine da inviare per email."); return; }
-    const mode = localStorage.getItem("loma.mail.mode");
-    if (!mode) { setMailAsk(true); return; }
+    if (!acc) { setMailAsk(true); return; }
+    const svc = serviceOf(acc);
+    if ((window as any).LomaAndroid?.shareBegin) {
+      if (await androidShare(await outputFile(), svc.pkg)) { if (acc.email) notify(`Scegli ${acc.email} come mittente se l'app ne ha più di uno.`); return; }
+    }
+    if (isTouchDevice()) return share("Mail", "mailto:?subject=Immagine%20da%20LoMa%20VIEWER");
     const desk = (window as any).lomaDesktop;
     const ok = await copyToClipboard();
-    if (mode === "app") {
+    if (svc.id === "app") {
       let p = localStorage.getItem("loma.topaz.Mail") || "";
       if (!p && desk?.pickApp) { p = (await desk.pickApp("Mail")) || ""; if (p) localStorage.setItem("loma.topaz.Mail", p); }
       if (p && desk?.launchApp) {
@@ -740,7 +743,7 @@ export function LomaViewer() {
         if (!r?.ok) { localStorage.removeItem("loma.topaz.Mail"); notify("App di posta non trovata: premi di nuovo e selezionala."); return; }
       } else window.location.href = "mailto:?subject=Immagine%20da%20LoMa%20VIEWER";
     } else {
-      const u = localStorage.getItem("loma.mail.url") || "https://mail.google.com/mail/u/0/#inbox?compose=new";
+      const u = svc.web(acc.email);
       if (desk?.openExternal) desk.openExternal(u); else window.open(u, "_blank", "noopener");
     }
     const paste = /Mac/.test(navigator.platform) ? "⌘V" : "Ctrl+V";
@@ -1042,7 +1045,13 @@ export function LomaViewer() {
         </Group>
         <Group last>
           {touch ? (
+            <>
+            <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => openAI("Google Drive", "https://drive.google.com/", "com.google.android.apps.docs")} />
+            <Tool icon={<B.OneDriveIcon />} label="OneDrv" tip="OneDrive" onClick={() => openAI("OneDrive", "https://onedrive.live.com/", "com.microsoft.skydrive")} />
+            <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => (img ? sharePhoto() : notify("Apri prima un'immagine da condividere."))} />
+            <Tool icon={<B.MailIcon />} label="Mail" onClick={() => mail()} />
             <Tool wide icon={<Share2 className="text-primary" />} label="Condividi" tip="Apri la condivisione del sistema" onClick={() => (img ? sharePhoto() : notify("Apri prima un'immagine da condividere."))} />
+            </>
           ) : (
             <>
             <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
@@ -1301,7 +1310,7 @@ export function LomaViewer() {
       {convOpen && <ConvertDialog current={img?.file ?? null} preview={img?.url ?? null} size={img ? { w: img.w, h: img.h } : null} session={session} visible={visible} onClose={() => setConvOpen(false)} />}
       {printSrc && <PrintDialog src={printSrc} onClose={() => { URL.revokeObjectURL(printSrc); setPrintSrc(null); }} />}
       {topazOpen && <TopazSettings onClose={() => setTopazOpen(false)} />}
-      {mailAsk && <MailChoice onClose={() => setMailAsk(false)} onPick={(m, u) => { setMailAsk(false); localStorage.setItem("loma.mail.mode", m); if (u) localStorage.setItem("loma.mail.url", u); mail(); }} />}
+      {mailAsk && <MailChoice onClose={() => setMailAsk(false)} onPick={(a) => { setMailAsk(false); mail(a); }} />}
       {waAsk && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 p-4" onClick={() => setWaAsk(false)}>
           <div className="w-full max-w-sm rounded-lg border border-border bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
