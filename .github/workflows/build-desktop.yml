@@ -36,18 +36,36 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run electron:build:mac -- --publish never
-      - uses: actions/upload-artifact@v4
-        with:
-          name: loma-viewer-${{ matrix.os }}
-          path: |
-            electron-release/*.exe
-            electron-release/*.dmg
-            electron-release/*.zip
-      - name: Attach to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            electron-release/*.exe
-            electron-release/*.dmg
-            electron-release/*.zip
+      # Publish to GitHub Releases (no artifact storage quota), like the APK workflow.
+      # Fixed asset names so every build replaces the previous one (--clobber).
+      - name: Publish installers to GitHub Release (desktop-latest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -e
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp electron-release/*.exe loma-viewer-win.exe
+            FILES="loma-viewer-win.exe"
+          else
+            cp electron-release/*.dmg loma-viewer-mac.dmg
+            cp electron-release/*-mac.zip loma-viewer-mac.zip 2>/dev/null || cp electron-release/*.zip loma-viewer-mac.zip
+            FILES="loma-viewer-mac.dmg loma-viewer-mac.zip"
+          fi
+          ls -la $FILES
+          TAG=desktop-latest
+          NOTES="Ultima build desktop (${RUNNER_OS}) da ${GITHUB_SHA::7} ($(date -u +%Y-%m-%d\ %H:%M) UTC)"
+          # Both OS jobs publish to the same release: retry to absorb the create race.
+          for i in 1 2 3 4 5; do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              if gh release upload "$TAG" $FILES --clobber; then exit 0; fi
+            else
+              if gh release create "$TAG" $FILES \
+                --title "LoMa VIEWER Desktop (ultima build)" \
+                --notes "$NOTES" \
+                --prerelease; then exit 0; fi
+            fi
+            echo "Retry $i: release busy, waiting…"
+            sleep 10
+          done
+          exit 1
