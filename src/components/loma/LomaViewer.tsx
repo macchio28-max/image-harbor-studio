@@ -26,7 +26,7 @@ import { MailChoice, WEBMAIL_PRESETS, serviceOf, type MailAccount } from "./Mail
 import { ContactSheet } from "./ContactSheet";
 import { ProvenancePanel } from "./ProvenancePanel";
 import { type CullItem, type CullFilter, IMAGE_RE, readCull, readCullTags, applyFilter } from "./culling";
-import { developCanvas, autoMeasure } from "./develop";
+import { developCanvas, developCanvasAsync, autoMeasure } from "./develop";
 
 type Meta = Record<string, any>;
 const EMPTY_META = {};
@@ -88,29 +88,42 @@ export function LomaViewer() {
     setTimeout(() => setToast(null), 3200);
   };
 
-  // Live development preview (downscaled for speed)
+  // Live development preview: while dragging, render a viewport-sized proxy once per frame;
+  // after edits settle, consolidate at full resolution in background bands (superseded runs are dropped).
+  const proxyRef = useRef<{ key: unknown; cv: HTMLCanvasElement; k: number } | null>(null);
+  const devGen = useRef(0);
   useEffect(() => {
     if (!img) { setHist(null); return; }
-    let cancel = false;
+    const gen = ++devGen.current;
+    const stale = () => gen !== devGen.current;
     const id = requestAnimationFrame(() => {
       const src = imgEl.current, cv = preview.current;
-      if (cancel || !src || !cv || !src.complete || !src.naturalWidth) return;
-      const k = Math.min(1, 1600 / Math.max(img.w, img.h));
-      const w = Math.max(1, Math.round(img.w * k)), h = Math.max(1, Math.round(img.h * k));
-      const { canvas, hist: hh } = developCanvas(src, w, h, adjust, k, true);
-      cv.width = w; cv.height = h;
+      if (stale() || !src || !cv || !src.complete || !src.naturalWidth) return;
+      if (!proxyRef.current || proxyRef.current.key !== img) {
+        const target = Math.min(2048, Math.max(1024, Math.max(window.innerWidth, window.innerHeight) * Math.min(2, window.devicePixelRatio || 1)));
+        const k = Math.min(1, target / Math.max(img.w, img.h));
+        const p = document.createElement("canvas");
+        p.width = Math.max(1, Math.round(img.w * k)); p.height = Math.max(1, Math.round(img.h * k));
+        p.getContext("2d")!.drawImage(src, 0, 0, p.width, p.height);
+        proxyRef.current = { key: img, cv: p, k };
+      }
+      const { cv: p, k } = proxyRef.current;
+      const { canvas, hist: hh } = developCanvas(p, p.width, p.height, adjust, k, true);
+      if (cv.width !== p.width || cv.height !== p.height) { cv.width = p.width; cv.height = p.height; }
       cv.getContext("2d")!.drawImage(canvas, 0, 0);
       setHist(hh);
     });
-    // After edits settle, re-render at full resolution so 100%/200% zoom stays sharp.
-    const t = isNeutral(adjust) || Math.max(img.w, img.h) <= 1600 ? 0 : window.setTimeout(() => {
-      const src = imgEl.current, cv = preview.current;
-      if (cancel || !src || !cv || !src.naturalWidth) return;
-      const { canvas } = developCanvas(src, img.w, img.h, adjust, 1);
+    const big = Math.max(img.w, img.h) > (proxyRef.current?.cv.width ?? 0) + 1 || Math.max(img.w, img.h) > 2048;
+    const t = isNeutral(adjust) || !big ? 0 : window.setTimeout(async () => {
+      const src = imgEl.current;
+      if (stale() || !src || !src.naturalWidth) return;
+      const full = await developCanvasAsync(src, img.w, img.h, adjust, stale);
+      const cv = preview.current;
+      if (!full || stale() || !cv) return;
       cv.width = img.w; cv.height = img.h;
-      cv.getContext("2d")!.drawImage(canvas, 0, 0);
-    }, 450);
-    return () => { cancel = true; cancelAnimationFrame(id); if (t) clearTimeout(t); };
+      cv.getContext("2d")!.drawImage(full, 0, 0);
+    }, 600);
+    return () => { devGen.current++; cancelAnimationFrame(id); if (t) clearTimeout(t); };
   }, [img, adjust, imgReady]);
 
   const autoWb = () => {
