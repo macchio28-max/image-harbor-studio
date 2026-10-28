@@ -674,7 +674,11 @@ export function LomaViewer() {
     const mobile = isTouchDevice();
     if (img && pkg && (window as any).LomaAndroid?.shareCommitTo) {
       // Android APK: open the installed app directly with the photo attached.
-      if (await androidShare(await outputFile(), pkg)) return;
+      const t = sonnerToast.loading(`Apertura di ${name}…`);
+      try {
+        if (await androidShare(await outputFile(), pkg)) { sonnerToast.success(`${name} aperto`, { id: t, duration: QUICK_MS }); return; }
+        sonnerToast.dismiss(t);
+      } catch { sonnerToast.dismiss(t); }
     }
     if (img && mobile) {
       // Touch: each AI opens its own app/site (universal link) with the photo in the clipboard.
