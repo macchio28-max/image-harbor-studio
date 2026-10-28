@@ -2,7 +2,7 @@
 // LomaAndroid bridge, which writes them to cache and fires ACTION_SEND via FileProvider.
 const CHUNK = 384 * 1024; // multiple of 3 → each chunk is clean Base64
 
-export async function androidShare(file: File): Promise<boolean> {
+export async function androidShare(file: File, pkg?: string): Promise<boolean> {
   const a = (window as any).LomaAndroid;
   if (!a?.shareBegin) return false;
   let f = file;
@@ -17,7 +17,7 @@ export async function androidShare(file: File): Promise<boolean> {
       f = new File([b], f.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
     } catch { /* send as is */ }
   }
-  return (await upload(a, f, f.name, f.type || "image/jpeg")) ? !!a.shareCommit(upId) : false;
+  return (await upload(a, f, f.name, f.type || "image/jpeg")) ? !!(pkg && a.shareCommitTo ? a.shareCommitTo(upId, pkg) : a.shareCommit(upId)) : false;
 }
 
 let upId = "";

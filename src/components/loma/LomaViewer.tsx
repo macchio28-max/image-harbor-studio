@@ -670,8 +670,12 @@ export function LomaViewer() {
       return true;
     } catch { return false; }
   };
-  const openAI = async (name: string, url: string) => {
+  const openAI = async (name: string, url: string, pkg?: string) => {
     const mobile = isTouchDevice();
+    if (img && pkg && (window as any).LomaAndroid?.shareCommitTo) {
+      // Android APK: open the installed app directly with the photo attached.
+      if (await androidShare(await outputFile(), pkg)) return;
+    }
     if (img && mobile) {
       // Touch: each AI opens its own app/site (universal link) with the photo in the clipboard.
       const ok = await copyToClipboard();
@@ -1017,10 +1021,10 @@ export function LomaViewer() {
           <div className={canRedo ? "" : "pointer-events-none opacity-40"}><Tool icon={<Redo2 />} label="Ripeti" tip="Ripeti modifica (Ctrl+Y / ⌘+⇧+Z)" onClick={() => travel(1)} /></div>
         </Group>
         <Group>
-          <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/")} />
-          <Tool icon={<B.MetaAIIcon />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/")} />
-          <Tool icon={<B.GeminiIcon />} label="Gemini" onClick={() => openAI("Gemini", "https://gemini.google.com/")} />
-          <Tool icon={<B.FlowIcon />} label="Flow" onClick={() => openAI("Flow", "https://labs.google/fx/tools/flow")} />
+          <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/", "com.openai.chatgpt")} />
+          <Tool icon={<B.MetaAIIcon />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/", "com.facebook.stellar")} />
+          <Tool icon={<B.GeminiIcon />} label="Gemini" onClick={() => openAI("Gemini", "https://gemini.google.com/", "com.google.android.apps.bard")} />
+          <Tool icon={<B.FlowIcon />} label="Flow" onClick={() => openAI("Flow", "https://labs.google/fx/tools/flow", "com.google.android.apps.labs.flow")} />
         </Group>
         <Group>
           {!touch && <>
@@ -1031,6 +1035,7 @@ export function LomaViewer() {
           <Tool icon={<B.LightroomClassicIcon />} label="Lrc" tip="Adobe Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
           <Tool icon={<Settings />} label="App" tip="Percorsi programmi" onClick={() => setTopazOpen(true)} />
           </>}
+          {touch && <Tool icon={<B.LightroomIcon />} label="Lr" tip="Apri in Lightroom mobile" onClick={() => openAI("Lightroom", "https://lightroom.adobe.com/", "com.adobe.lrmobile")} />}
           <Tool icon={<Repeat />} label="Converti" tip="Converti immagini (singola o batch)" onClick={() => (img || session.length ? setConvOpen(true) : notify("Apri prima un'immagine"))} />
           <Tool icon={<Printer />} label="Stampa" tip="Stampa fotografica" onClick={openPrint} />
           <Tool icon={<Trash2 />} label="Cache" tip="Svuota cache e memoria" onClick={clearCache} />
