@@ -17,12 +17,26 @@ export async function androidShare(file: File): Promise<boolean> {
       f = new File([b], f.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
     } catch { /* send as is */ }
   }
-  const id: string = a.shareBegin(f.name, f.type || "image/jpeg");
+  return (await upload(a, f, f.name, f.type || "image/jpeg")) ? !!a.shareCommit(upId) : false;
+}
+
+let upId = "";
+async function upload(a: any, b: Blob, name: string, mime: string): Promise<boolean> {
+  const id: string = a.shareBegin(name, mime);
   if (!id) return false;
-  for (let o = 0; o < f.size; o += CHUNK) {
-    const u = new Uint8Array(await f.slice(o, o + CHUNK).arrayBuffer());
+  for (let o = 0; o < b.size; o += CHUNK) {
+    const u = new Uint8Array(await b.slice(o, o + CHUNK).arrayBuffer());
     let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000));
     if (!a.shareChunk(id, btoa(s))) return false;
   }
-  return !!a.shareCommit(id);
+  upId = id;
+  return true;
+}
+
+/** Writes the file into the tablet's Pictures/LoMa folder (MediaStore) so it appears in Galleria. */
+export async function androidSave(b: Blob, name: string): Promise<boolean> {
+  const a = (window as any).LomaAndroid;
+  if (!a?.saveCommit) return false;
+  if (!(await upload(a, b, name, b.type || "image/png"))) return false;
+  return !!a.saveCommit(upId, name);
 }
