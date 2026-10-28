@@ -262,6 +262,45 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception e) { Log.e(TAG, "shareCommit", e); return false; }
         }
 
+        // Copies an uploaded file into Pictures/LoMa (MediaStore on Android 10+, MediaScanner before) so it shows in Galleria.
+        @JavascriptInterface
+        public boolean saveCommit(String id, String name) {
+            File f; String mime;
+            synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
+            if (f == null) return false;
+            String display = (name == null || name.isEmpty()) ? f.getName() : name;
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    android.content.ContentValues v = new android.content.ContentValues();
+                    v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, display);
+                    v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime);
+                    v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/LoMa");
+                    v.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1);
+                    Uri dest = getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
+                    if (dest == null) return false;
+                    try (OutputStream os = getContentResolver().openOutputStream(dest); InputStream in = new java.io.FileInputStream(f)) {
+                        byte[] buf = new byte[1 << 16]; int n;
+                        while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                    }
+                    v.clear();
+                    v.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0);
+                    getContentResolver().update(dest, v, null, null);
+                } else {
+                    File dir = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "LoMa");
+                    dir.mkdirs();
+                    File out = new File(dir, display);
+                    try (OutputStream os = new FileOutputStream(out); InputStream in = new java.io.FileInputStream(f)) {
+                        byte[] buf = new byte[1 << 16]; int n;
+                        while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                    }
+                    android.media.MediaScannerConnection.scanFile(MainActivity.this, new String[]{ out.getAbsolutePath() }, new String[]{ mime }, null);
+                }
+                f.delete();
+                Log.i(TAG, "salvato in Immagini/LoMa: " + display);
+                return true;
+            } catch (Exception e) { Log.e(TAG, "saveCommit", e); return false; }
+        }
+
         @JavascriptInterface
         public void releaseFile(String id) {
             File f;
