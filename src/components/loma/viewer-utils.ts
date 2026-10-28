@@ -16,7 +16,7 @@ export async function renderClean(
   src.getContext("2d")!.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
   // Neutral settings: skip the pixel pipeline (big speed-up for Pulisci/Salva).
   const dev = isNeutral(adjust) ? src : developCanvas(src, sw, sh, adjust, 1).canvas;
-  if (dev === src && !adjust.rotation && !adjust.straighten && !adjust.flipH) {
+  if (dev === src && !adjust.rotation && !adjust.straighten && !adjust.flipH && !adjust.flipV) {
     const raw0 = await new Promise<Blob>((res, rej) => src.toBlob((b) => (b ? res(b) : rej(new Error("export"))), type, 0.97));
     return stripBlob(raw0);
   }
@@ -28,7 +28,7 @@ export async function renderClean(
   const ctx = c.getContext("2d")!;
   ctx.translate(c.width / 2, c.height / 2);
   ctx.rotate(ang);
-  if (adjust.flipH) ctx.scale(-1, 1);
+  ctx.scale(adjust.flipH ? -1 : 1, adjust.flipV ? -1 : 1);
   ctx.drawImage(dev, -sw / 2, -sh / 2);
   const raw = await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("export"))), type, 0.97));
   // Canvas output carries no source metadata; scrub any encoder-added chunks/segments anyway.
