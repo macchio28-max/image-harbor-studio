@@ -74,7 +74,7 @@ function hueRgb(h: number): [number, number, number] {
 function toneLut(a: Adjust) {
   const N = 1024, lut = new Float32Array(N + 1);
   const g = 1 / (1 + (a.brightness / 100) * 0.7);
-  const c = 1 + a.contrast / 100;
+  const c = Math.pow(2, a.contrast / 100);
   const curveK = a.curve === "standard" ? 0.25 : a.curve === "high" ? 0.5 : 0;
   for (let i = 0; i <= N; i++) {
     let v = i / N;
@@ -175,7 +175,7 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
   const op = a.layerOpacity / 100;
   const tones = ([[a.cbShadows, 0], [a.cbMid, 1], [a.cbHigh, 2]] as const)
     .filter(([t]) => t.a !== 0)
-    .map(([t, k]) => { const [r, g, b] = hueRgb(t.h); const m = (t.a / 100) * 0.25; return { k, r: (r - 0.5) * m, g: (g - 0.5) * m, b: (b - 0.5) * m }; });
+    .map(([t, k]) => { const [r, g, b] = hueRgb(t.h); const m = (t.a / 100) * 0.18; return { k, r: (r - 0.5) * m, g: (g - 0.5) * m, b: (b - 0.5) * m }; });
   const hslOn = HSL_CH.some((c) => a.hsl[c].h || a.hsl[c].s || a.hsl[c].l);
   const vig = a.vigAmount;
   const nrL = a.nrLum / 100 * 0.85, nrC = a.nrColor / 100;
