@@ -100,20 +100,26 @@ export function LomaViewer() {
       const src = imgEl.current, cv = preview.current;
       if (stale() || !src || !cv || !src.complete || !src.naturalWidth) return;
       if (!proxyRef.current || proxyRef.current.key !== img) {
-        const target = Math.min(2048, Math.max(1024, Math.max(window.innerWidth, window.innerHeight) * Math.min(2, window.devicePixelRatio || 1)));
+        // Light interactive proxy (~1000px long side): renders in a few ms, so sliders never stutter.
+        const target = 1000;
         const k = Math.min(1, target / Math.max(img.w, img.h));
         const p = document.createElement("canvas");
         p.width = Math.max(1, Math.round(img.w * k)); p.height = Math.max(1, Math.round(img.h * k));
-        p.getContext("2d")!.drawImage(src, 0, 0, p.width, p.height);
+        const pc = p.getContext("2d")!; pc.imageSmoothingQuality = "high"; pc.drawImage(src, 0, 0, p.width, p.height);
         proxyRef.current = { key: img, cv: p, k };
       }
       const { cv: p, k } = proxyRef.current;
-      const { canvas, hist: hh } = developCanvas(p, p.width, p.height, adjust, k, true);
+      const { canvas } = developCanvas(p, p.width, p.height, adjust, k, false);
       if (cv.width !== p.width || cv.height !== p.height) { cv.width = p.width; cv.height = p.height; }
       cv.getContext("2d")!.drawImage(canvas, 0, 0);
-      setHist(hh);
     });
-    const big = Math.max(img.w, img.h) > (proxyRef.current?.cv.width ?? 0) + 1 || Math.max(img.w, img.h) > 2048;
+    // Histogram only once movement stops: no React re-render per mouse tick.
+    const th = window.setTimeout(() => {
+      const pr = proxyRef.current;
+      if (stale() || !pr || pr.key !== img) return;
+      setHist(developCanvas(pr.cv, pr.cv.width, pr.cv.height, adjust, pr.k, true).hist);
+    }, 250);
+    const big = Math.max(img.w, img.h) > 1000;
     const t = isNeutral(adjust) || !big ? 0 : window.setTimeout(async () => {
       const src = imgEl.current;
       if (stale() || !src || !src.naturalWidth) return;
@@ -122,8 +128,8 @@ export function LomaViewer() {
       if (!full || stale() || !cv) return;
       cv.width = img.w; cv.height = img.h;
       cv.getContext("2d")!.drawImage(full, 0, 0);
-    }, 600);
-    return () => { devGen.current++; cancelAnimationFrame(id); if (t) clearTimeout(t); };
+    }, 450);
+    return () => { devGen.current++; cancelAnimationFrame(id); clearTimeout(th); if (t) clearTimeout(t); };
   }, [img, adjust, imgReady]);
 
   const autoWb = () => {

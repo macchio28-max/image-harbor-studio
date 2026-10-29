@@ -171,6 +171,10 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
   const s = mired / 100;
   const gr = Math.max(0, 1 + 0.2 * s), gb = Math.max(0, 1 - 0.2 * s), gg = Math.max(0, 1 - (a.tint / 100) * 0.3);
   const ev = Math.pow(2, a.exposure);
+  // Exposure LUT over [0,2]: replaces two Math.pow per channel per pixel with one lookup.
+  const EN = 4096, exLut = new Float32Array(EN + 1);
+  for (let i = 0; i <= EN; i++) exLut[i] = exposeChannel((i / EN) * 2, ev);
+  const ex = (v: number) => { const f = Math.max(0, Math.min(EN, v * (EN / 2))); return exLut[f | 0]!; };
   const hl = a.highlight / 100, sh = a.shadow / 100, wh = a.white / 100, bl = a.black / 100;
   const dz = a.dehaze / 100;
   const sat = 1 + a.saturation / 100 + Math.max(0, dz) * 0.25;
@@ -203,7 +207,7 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
       }
 
       r *= gr; g *= gg; b *= gb;
-      if (ev !== 1) { r = exposeChannel(r, ev); g = exposeChannel(g, ev); b = exposeChannel(b, ev); }
+      if (ev !== 1) { r = ex(r); g = ex(g); b = ex(b); }
 
       let Y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       if (hl || sh || wh || bl || bClar || bStruct) {
@@ -214,11 +218,11 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
         nY += sh * 0.35 * sw * (1 - Y) * (Y + 0.04);
         nY += wh * 0.18 * Y * Y * (wh > 0 ? 1 - Y * 0.5 : 1) + bl * 0.15 * (1 - Y) * (1 - Y) * (1 - Y);
         if (bClar) {
-          const cY = exposeChannel((0.2126 * bClar[i] + 0.7152 * bClar[i + 1] + 0.0722 * bClar[i + 2]) / 255, ev);
+          const cY = ex((0.2126 * bClar[i] + 0.7152 * bClar[i + 1] + 0.0722 * bClar[i + 2]) / 255);
           nY += (Y - cY) * clar * (1 - Math.abs(2 * Y - 1) * 0.6);
         }
         if (bStruct) {
-          const cY = exposeChannel((0.2126 * bStruct[i] + 0.7152 * bStruct[i + 1] + 0.0722 * bStruct[i + 2]) / 255, ev);
+          const cY = ex((0.2126 * bStruct[i] + 0.7152 * bStruct[i + 1] + 0.0722 * bStruct[i + 2]) / 255);
           nY += (Y - cY) * str;
         }
         if (Y > 1e-4) { const k = Math.max(0, nY) / Y; r *= k; g *= k; b *= k; } else { r = g = b = Math.max(0, nY); }
