@@ -9,7 +9,7 @@ export type CullItem = {
   flagged: boolean;
 };
 
-export const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp|avif|tiff?|cr2|cr3|nef|arw|dng|orf|rw2|raf|pef|srw|heic|heif)$/i;
+export const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp|avif|tiff?|psd|psb|cr2|cr3|nef|arw|dng|orf|rw2|raf|pef|srw|heic|heif)$/i;
 
 const truthy = (v: unknown) =>
   v === true || v === 1 || (typeof v === "string" && /^(1|true|yes|on|protected|locked)$/i.test(v.trim()));
