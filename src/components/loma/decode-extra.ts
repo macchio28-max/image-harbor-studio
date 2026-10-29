@@ -17,7 +17,7 @@ async function decodeTiff(file: File): Promise<Blob | null> {
   if (!best?.width) return null;
   const rgba = UTIF.toRGBA8(best) as Uint8Array;
   const c = document.createElement("canvas"); c.width = best.width; c.height = best.height;
-  c.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), best.width, best.height), 0, 0);
+  c.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(rgba), best.width, best.height), 0, 0);
   return toBlob(c);
 }
 
