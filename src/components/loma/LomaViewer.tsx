@@ -101,7 +101,7 @@ export function LomaViewer() {
       if (stale() || !src || !cv || !src.complete || !src.naturalWidth) return;
       if (!proxyRef.current || proxyRef.current.key !== img) {
         // Light interactive proxy (~1000px long side): renders in a few ms, so sliders never stutter.
-        const target = Math.max(1000, Math.round(Math.max(img.w, img.h) / 3 > 1000 ? 1000 : 1000));
+        const target = 1000;
         const k = Math.min(1, target / Math.max(img.w, img.h));
         const p = document.createElement("canvas");
         p.width = Math.max(1, Math.round(img.w * k)); p.height = Math.max(1, Math.round(img.h * k));
