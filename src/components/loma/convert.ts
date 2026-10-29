@@ -2,11 +2,14 @@
 export type Fmt = "jpeg" | "png" | "webp" | "tiff" | "bmp" | "gif";
 export type ConvOpts = { fmt: Fmt; quality: number; lossless: boolean; alpha: boolean; scale: number; keepMeta: boolean };
 export const EXT: Record<Fmt, string> = { jpeg: "jpg", png: "png", webp: "webp", tiff: "tif", bmp: "bmp", gif: "gif" };
-const RAWLIKE = /\.(tiff?|cr2|cr3|crw|nef|nrw|arw|dng|orf|rw2|raf|pef|srw|heic|heif)$/i;
+const RAWLIKE = /\.(tiff?|psd|psb|cr2|cr3|crw|nef|nrw|arw|dng|orf|rw2|raf|pef|srw|heic|heif)$/i;
 
 export async function decodeSource(file: File): Promise<ImageBitmap> {
   if (RAWLIKE.test(file.name)) {
     try { return await createImageBitmap(file); } catch { /* use embedded preview */ }
+    const { decodeExtra } = await import("./decode-extra");
+    const d = await decodeExtra(file);
+    if (d) return createImageBitmap(d);
     const { extractRawPreview } = await import("./raw-preview");
     const p = await extractRawPreview(file);
     if (p) return createImageBitmap(p);

@@ -225,7 +225,10 @@ export function LomaViewer() {
     const isRaw = RAWLIKE.test(file.name);
     let preview: Blob | null = null;
     // 1) Picture first: RAW shows its embedded JPEG immediately; metadata is read afterwards.
-    if (isRaw) {
+    const { decodeExtra } = await import("./decode-extra");
+    const decoded = await decodeExtra(file);
+    if (decoded) url = URL.createObjectURL(decoded);
+    if (isRaw && !decoded) {
       const { extractRawPreview } = await import("./raw-preview");
       preview = await extractRawPreview(file, { deep: false });
       if (!preview) preview = await extractRawPreview(file, { deep: true });

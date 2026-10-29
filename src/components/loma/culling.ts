@@ -9,7 +9,7 @@ export type CullItem = {
   flagged: boolean;
 };
 
-export const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp|avif|tiff?|cr2|cr3|nef|arw|dng|orf|rw2|raf|pef|srw|heic|heif)$/i;
+export const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp|avif|tiff?|psd|psb|cr2|cr3|nef|arw|dng|orf|rw2|raf|pef|srw|heic|heif)$/i;
 
 const truthy = (v: unknown) =>
   v === true || v === 1 || (typeof v === "string" && /^(1|true|yes|on|protected|locked)$/i.test(v.trim()));
@@ -150,6 +150,11 @@ export async function readCull(file: File, opts: { light?: boolean } = {}): Prom
   if (!thumb && /\.(cr2|cr3|nef|nrw|arw|srf|sr2|dng|orf|rw2|raf|pef|srw|3fr|iiq|erf|kdc|tiff?)$/i.test(file.name)) {
     const p = await withTimeout(extractRawPreview(file, { deep: false }), 8000);
     if (p) thumb = URL.createObjectURL(p);
+  }
+  if (!thumb && /\.(tiff?|psd|psb)$/i.test(file.name)) {
+    const { decodeExtra } = await import("./decode-extra");
+    const d = await withTimeout(decodeExtra(file), 15000);
+    if (d) thumb = URL.createObjectURL(d);
   }
   if (!thumb && /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(file.name)) thumb = URL.createObjectURL(file);
   const base = cullFromMeta(meta);
