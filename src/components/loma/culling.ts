@@ -151,6 +151,11 @@ export async function readCull(file: File, opts: { light?: boolean } = {}): Prom
     const p = await withTimeout(extractRawPreview(file, { deep: false }), 8000);
     if (p) thumb = URL.createObjectURL(p);
   }
+  if (!thumb && /\.(tiff?|psd|psb)$/i.test(file.name)) {
+    const { decodeExtra } = await import("./decode-extra");
+    const d = await withTimeout(decodeExtra(file), 15000);
+    if (d) thumb = URL.createObjectURL(d);
+  }
   if (!thumb && /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(file.name)) thumb = URL.createObjectURL(file);
   const base = cullFromMeta(meta);
   return {

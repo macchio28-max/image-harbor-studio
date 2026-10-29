@@ -7,6 +7,9 @@ const RAWLIKE = /\.(tiff?|psd|psb|cr2|cr3|crw|nef|nrw|arw|dng|orf|rw2|raf|pef|sr
 export async function decodeSource(file: File): Promise<ImageBitmap> {
   if (RAWLIKE.test(file.name)) {
     try { return await createImageBitmap(file); } catch { /* use embedded preview */ }
+    const { decodeExtra } = await import("./decode-extra");
+    const d = await decodeExtra(file);
+    if (d) return createImageBitmap(d);
     const { extractRawPreview } = await import("./raw-preview");
     const p = await extractRawPreview(file);
     if (p) return createImageBitmap(p);
