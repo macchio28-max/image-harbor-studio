@@ -427,7 +427,7 @@ export function LomaViewer() {
     const add: CullItem[] = files.map((file) => ({ id: `ftp${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${file.name}`, file, thumb: null, rating: 0, locked: false, flagged: false }));
     setSession((s) => [...s, ...add]);
     setView("grid");
-    toast.success(add.length > 1 ? `${add.length} foto ricevute via FTP` : `Ricevuta via FTP: ${add[0]!.file.name}`, { duration: 1000 });
+    notify(add.length > 1 ? `${add.length} foto ricevute via FTP` : `Ricevuta via FTP: ${add[0]!.file.name}`);
     for (const c of add) {
       const [t, r] = await Promise.all([readCullTags(c.file, { light: true }).catch(() => ({})), readCull(c.file, { light: true }).catch(() => ({}) as Partial<CullItem>)]);
       setSession((s) => s.map((x) => (x.id === c.id ? { ...x, thumb: (r as any).thumb ?? null, ...t } : x)));
