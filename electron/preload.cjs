@@ -27,5 +27,8 @@ contextBridge.exposeInMainWorld("lomaDesktop", {
   copyImage: async (blob) => ipcRenderer.invoke("loma:copyImage", new Uint8Array(await blob.arrayBuffer())),
   shareFile: async (src, name) =>
     ipcRenderer.invoke("loma:shareFile", typeof src === "string" ? src : new Uint8Array(await src.arrayBuffer()), name),
+  getGoogleToken: () => ipcRenderer.invoke("loma:getGoogleToken"),
+  hasGoogleToken: () => ipcRenderer.invoke("loma:hasGoogleToken"),
+  signOutGoogle: () => ipcRenderer.invoke("loma:signOutGoogle"),
   showInFolder: (p) => ipcRenderer.invoke("loma:showInFolder", p),
 });

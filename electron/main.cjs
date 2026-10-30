@@ -61,13 +61,6 @@ function createWindow() {
     webPreferences: { contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, "preload.cjs") },
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
-    // Google sign-in popup must stay a child window so window.opener delivers the Drive token back.
-    if (url.startsWith("https://accounts.google.com/")) {
-      return { action: "allow", overrideBrowserWindowOptions: {
-        width: 520, height: 680, parent: win, autoHideMenuBar: true, backgroundColor: "#ffffff",
-        webPreferences: { contextIsolation: true, nodeIntegration: false },
-      } };
-    }
     shell.openExternal(url); return { action: "deny" };
   });
   mainWin = win;
@@ -134,6 +127,62 @@ ipcMain.handle("loma:isReadOnly", (_e, p) => {
   } catch { return false; }
 });
 ipcMain.handle("loma:openPath", (_e, p) => shell.openPath(p));
+// ---- Google Drive OAuth (Desktop client, loopback redirect) ----
+const G_ID = "150485033350-uth3dtdbmhq1qmi42c9rg511si1qcem4.apps.googleusercontent.com";
+const G_SECRET = "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"; // Desktop-type client: Google treats this as non-confidential.
+const tokFile = () => path.join(app.getPath("userData"), "gdrive_token.json");
+const readTok = () => { try { return JSON.parse(fs.readFileSync(tokFile(), "utf8")); } catch { return null; } };
+const writeTok = (t) => fs.writeFileSync(tokFile(), JSON.stringify(t));
+async function tokenReq(params) {
+  const r = await fetch("https://oauth2.googleapis.com/token", { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: G_ID, client_secret: G_SECRET, ...params }).toString() });
+  const j = await r.json();
+  if (!r.ok || !j.access_token) throw new Error(j.error_description || j.error || `Google [${r.status}]`);
+  return j;
+}
+const store = (j, old) => { const t = { access_token: j.access_token, refresh_token: j.refresh_token || old?.refresh_token, expires_at: Date.now() + Number(j.expires_in || 3600) * 1000 }; writeTok(t); return t; };
+const OK_HTML = `<!doctype html><meta charset="utf-8"><title>LoMa VIEWER</title><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0f17;color:#e6e9ef;font-family:system-ui,sans-serif"><div style="text-align:center;padding:40px;border:1px solid #2a3140;border-radius:14px;background:#121826"><div style="font-size:42px">✓</div><h2 style="margin:8px 0">Accesso completato con successo!</h2><p style="color:#9aa3b2">Puoi chiudere questa scheda e tornare a LoMa VIEWER.</p></div></body>`;
+let loginP = null;
+function loopbackLogin() {
+  loginP ??= new Promise((res, rej) => {
+    const http = require("http");
+    let redirect = "";
+    const srv = http.createServer(async (req, rsp) => {
+      const u = new globalThis.URL(req.url, redirect);
+      const code = u.searchParams.get("code"), err = u.searchParams.get("error");
+      if (!code && !err) { rsp.writeHead(404); return rsp.end(); }
+      rsp.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      rsp.end(err ? `<meta charset="utf-8"><p>Accesso annullato: ${err}</p>` : OK_HTML);
+      srv.close(); clearTimeout(to);
+      const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.show(); w.focus(); }
+      if (err) return rej(new Error("Accesso annullato"));
+      try { res(store(await tokenReq({ code, grant_type: "authorization_code", redirect_uri: redirect }))); } catch (e) { rej(e); }
+    });
+    const to = setTimeout(() => { srv.close(); rej(new Error("Tempo scaduto per l'accesso Google")); }, 5 * 60 * 1000);
+    srv.listen(0, "127.0.0.1", () => {
+      redirect = `http://127.0.0.1:${srv.address().port}`;
+      const q = new URLSearchParams({ client_id: G_ID, redirect_uri: redirect, response_type: "code", access_type: "offline",
+        prompt: "consent", scope: "https://www.googleapis.com/auth/drive" });
+      shell.openExternal(`https://accounts.google.com/o/oauth2/v2/auth?${q}`);
+    });
+  }).finally(() => { loginP = null; });
+  return loginP;
+}
+ipcMain.handle("loma:getGoogleToken", async () => {
+  let t = readTok();
+  if (t?.access_token && t.expires_at - Date.now() > 60000) return t.access_token;
+  if (t?.refresh_token) { try { return store(await tokenReq({ refresh_token: t.refresh_token, grant_type: "refresh_token" }), t).access_token; } catch {} }
+  return (await loopbackLogin()).access_token;
+});
+ipcMain.handle("loma:hasGoogleToken", () => { const t = readTok(); return !!(t && (t.refresh_token || t.expires_at > Date.now())); });
+ipcMain.handle("loma:signOutGoogle", async () => {
+  const t = readTok();
+  try { fs.unlinkSync(tokFile()); } catch {}
+  const v = t?.refresh_token || t?.access_token;
+  if (v) try { await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(v)}`, { method: "POST" }); } catch {}
+  return true;
+});
 ipcMain.handle("loma:openExternal", (_e, u) => (/^https?:\/\//.test(u) ? shell.openExternal(u) : null));
 
 app.whenReady().then(() => {

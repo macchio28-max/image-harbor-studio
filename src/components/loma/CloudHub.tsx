@@ -3,7 +3,7 @@ import { Cloud, Plus, Trash2, Pencil, Settings, X, Check, LogOut, Download, Uplo
 import { toast } from "sonner";
 import {
   type CloudProfile, type CloudFile, CLOUD_SERVICES, loadProfiles, saveProfiles, getClientId, setClientId,
-  parseFolderId, listImages, downloadFile, uploadFile, folderName, isSignedIn, signOut, getToken,
+  parseFolderId, listImages, downloadFile, uploadFile, folderName, isSignedIn, signOut, getToken, hasDesktopAuth, refreshSignedIn,
 } from "./cloud-hub";
 
 export type UploadKind = "developed" | "original" | "clean";
@@ -22,7 +22,9 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFile, onImport,
   const [mode, setMode] = useState(initial);
   const [list, setList] = useState<CloudProfile[]>(loadProfiles);
   const [cid, setCid] = useState(getClientId);
-  const [settings, setSettings] = useState(!getClientId());
+  const [settings, setSettings] = useState(!hasDesktopAuth() && !getClientId());
+  const desktop = hasDesktopAuth();
+  useEffect(() => { refreshSignedIn().then(setSigned); }, []);
   const [edit, setEdit] = useState<CloudProfile | null>(list.length ? null : { id: "", name: "", service: "gdrive", folder: "" });
   const [sel, setSel] = useState<string>(list[0]?.id ?? "");
   const [kind, setKind] = useState<UploadKind>("developed");
@@ -85,7 +87,9 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFile, onImport,
           <Cloud className="h-5 w-5 text-primary" />
           <h2 className="flex-1 text-base font-semibold">Cloud Hub</h2>
           {signed && <button title="Esci da Google" onClick={() => { signOut(); setSigned(false); }} className="rounded p-2 text-muted-foreground hover:bg-accent"><LogOut className="h-4 w-4" /></button>}
-          <button title="Impostazioni" onClick={() => setSettings((s) => !s)} className="rounded p-2 text-muted-foreground hover:bg-accent"><Settings className="h-4 w-4" /></button>
+          {desktop && !signed && <button onClick={async () => { try { await getToken(); setSigned(true); toast.success("Collegato a Google Drive", { duration: 1000 }); } catch (e) { fail(e); } }} className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground">Accedi a Google</button>}
+          {desktop && signed && <span className="text-xs text-primary">Drive collegato</span>}
+          {!desktop && <button title="Impostazioni" onClick={() => setSettings((s) => !s)} className="rounded p-2 text-muted-foreground hover:bg-accent"><Settings className="h-4 w-4" /></button>}
           <button aria-label="Chiudi" onClick={onClose} className="rounded p-2 text-muted-foreground hover:bg-accent"><X className="h-4 w-4" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
