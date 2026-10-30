@@ -21,6 +21,7 @@ export function parseDropboxFolder(input: string): string {
   let s = input.trim();
   const m = s.match(/dropbox\.com\/home(\/[^?#]*)?/i);
   if (m) s = decodeURIComponent(m[1] || "/");
+  if (/^https?:\/\/(www\.)?dropbox\.com\/(scl\/fo|sh)\//i.test(s)) return s.split("#")[0]!;
   if (s === "" || s === "/") return "/";
   if (!s.startsWith("/") || /^https?:/i.test(s)) return "";
   return s.replace(/\/+$/, "");
@@ -108,7 +109,18 @@ async function rpc(endpoint: string, body: unknown) {
 // Dropbox-API-Arg must be ASCII: escape non-ASCII chars.
 const argHdr = (o: unknown) => JSON.stringify(o).replace(/[\u007f-\uffff]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
 
+// Share links are resolved to the real path in the user's own Dropbox (needs sharing.read).
+const linkCache = new Map<string, string>();
+async function resolve(folder: string): Promise<string> {
+  if (!/^https?:/i.test(folder)) return folder;
+  const c = linkCache.get(folder); if (c) return c;
+  const j = await rpc("/sharing/get_shared_link_metadata", { url: folder });
+  if (!j.path_lower) throw new Error("Questo link Dropbox non è una cartella del tuo account: aggiungila al tuo Dropbox o usa il percorso (es. /Foto).");
+  linkCache.set(folder, j.path_lower); return j.path_lower;
+}
+
 export async function dbxFolderName(folder: string) {
+  if (/^https?:/i.test(folder)) { const j = await rpc("/sharing/get_shared_link_metadata", { url: folder }); return j.name as string; }
   if (folder === "/") return "Dropbox";
   const j = await rpc("/files/get_metadata", { path: folder });
   if (j[".tag"] !== "folder") throw new Error("Il percorso Dropbox non è una cartella.");
@@ -116,6 +128,7 @@ export async function dbxFolderName(folder: string) {
 }
 
 export async function dbxList(folder: string): Promise<CloudFile[]> {
+  folder = await resolve(folder);
   const out: CloudFile[] = [];
   let j = await rpc("/files/list_folder", { path: apiPath(folder), limit: 2000 });
   for (;;) {
@@ -137,6 +150,7 @@ export async function dbxDownload(f: CloudFile): Promise<File> {
 }
 
 export async function dbxUpload(folder: string, file: Blob, name: string, onProgress?: (p: number) => void) {
+  folder = await resolve(folder);
   const t = await dbxToken();
   const path = `${apiPath(folder)}/${name}`;
   await new Promise<void>((res, rej) => {
