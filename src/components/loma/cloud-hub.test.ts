@@ -23,3 +23,13 @@ describe("parseOneDriveFolder", () => {
     expect(parseOneDriveFolder("https://example.com/x")).toBe("");
   });
 });
+
+import { parseDropboxFolder } from "./dropbox";
+describe("parseDropboxFolder", () => {
+  it("accepts paths, root and home links", () => {
+    expect(parseDropboxFolder("/Foto/Viaggio/")).toBe("/Foto/Viaggio");
+    expect(parseDropboxFolder("")).toBe("/");
+    expect(parseDropboxFolder("https://www.dropbox.com/home/Foto%20Lavori")).toBe("/Foto Lavori");
+    expect(parseDropboxFolder("ciao")).toBe("");
+  });
+});
