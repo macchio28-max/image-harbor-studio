@@ -24,6 +24,8 @@ import { Filmstrip } from "./Filmstrip";
 import { ComparePane } from "./ComparePane";
 import { MailChoice, WEBMAIL_PRESETS, serviceOf, type MailAccount } from "./MailChoice";
 import { CloudHub } from "./CloudHub";
+import { convertFile } from "./convert";
+import { stripBlob } from "./sanitize";
 import { ContactSheet } from "./ContactSheet";
 import { ProvenancePanel } from "./ProvenancePanel";
 import { type CullItem, type CullFilter, IMAGE_RE, readCull, readCullTags, applyFilter } from "./culling";
@@ -307,6 +309,13 @@ export function LomaViewer() {
   const visible = applyFilter(session, filter);
   const [multi, setMulti] = useState<Set<string>>(new Set());
   const anchorRef = useRef<string | null>(null);
+  const multiFiles = () => session.filter((s) => multi.has(s.id));
+  const currentFile = async (k: "developed" | "original" | "clean") => {
+    if (k === "original") return img!.file;
+    const jpg = k === "developed";
+    const b = await renderClean(imgEl.current!, adjust, crop, jpg ? "image/jpeg" : "image/png");
+    return new File([b], `${baseName(img!.file.name)}${jpg ? "_sviluppata.jpg" : "_pulita.png"}`, { type: b.type });
+  };
   const selectGrid = (id: string, how: "toggle" | "range" | "only") => {
     setMulti((prev) => {
       if (how === "only") { anchorRef.current = id; return new Set([id]); }
@@ -1473,7 +1482,7 @@ export function LomaViewer() {
                 if (it.id === curId && img) { out.push(await currentFile(k)); continue; }
                 if (k === "original") { out.push(it.file); continue; }
                 const jpg = k === "developed";
-                let b = await convertFile(it.file, { fmt: jpg ? "jpeg" : "png", quality: 92, scale: 1, keepMeta: false, alpha: !jpg, lossless: false } as any);
+                let b = await convertFile(it.file, { fmt: jpg ? "jpeg" : "png", quality: 92, scale: 1, keepMeta: false, alpha: !jpg, lossless: false });
                 if (!jpg) b = await stripBlob(b);
                 out.push(new File([b], `${baseName(it.file.name)}${jpg ? "_sviluppata.jpg" : "_pulita.png"}`, { type: b.type }));
               }
@@ -1481,12 +1490,7 @@ export function LomaViewer() {
             }
             return [await currentFile(k)];
           }}
-          currentFileUnused={async (k: "developed" | "original" | "clean") => {
-            if (k === "original") return img!.file;
-            const jpg = k === "developed";
-            const b = await renderClean(imgEl.current!, adjust, crop, jpg ? "image/jpeg" : "image/png");
-            return new File([b], `${baseName(img!.file.name)}${jpg ? "_sviluppata.jpg" : "_pulita.png"}`, { type: b.type });
-          }} />
+          />
       )}
       {waAsk && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 p-4" onClick={() => setWaAsk(false)}>
