@@ -129,7 +129,7 @@ ipcMain.handle("loma:isReadOnly", (_e, p) => {
 ipcMain.handle("loma:openPath", (_e, p) => shell.openPath(p));
 // ---- Google Drive OAuth (Desktop client, loopback redirect) ----
 const G_ID = "150485033350-uth3dtdbmhq1qmi42c9rg511si1qcem4.apps.googleusercontent.com";
-const G_SECRET = "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"; // Desktop-type client: Google treats this as non-confidential.
+const G_SECRET = "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"; // Desktop-type client: Google treats this as non-confidential.
 const tokFile = () => path.join(app.getPath("userData"), "gdrive_token.json");
 const readTok = () => { try { return JSON.parse(fs.readFileSync(tokFile(), "utf8")); } catch { return null; } };
 const writeTok = (t) => fs.writeFileSync(tokFile(), JSON.stringify(t));
@@ -173,6 +173,8 @@ ipcMain.handle("loma:getGoogleToken", async () => {
   let t = readTok();
   if (t?.access_token && t.expires_at - Date.now() > 60000) return t.access_token;
   if (t?.refresh_token) { try { return store(await tokenReq({ refresh_token: t.refresh_token, grant_type: "refresh_token" }), t).access_token; } catch {} }
+  // Saved token missing/expired/rejected: wipe it so the login starts clean.
+  if (t) { try { fs.unlinkSync(tokFile()); } catch {} }
   return (await loopbackLogin()).access_token;
 });
 ipcMain.handle("loma:hasGoogleToken", () => { const t = readTok(); return !!(t && (t.refresh_token || t.expires_at > Date.now())); });
