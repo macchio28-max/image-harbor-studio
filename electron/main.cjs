@@ -281,7 +281,7 @@ function dbxLoopback(key) {
   return dbxLoginP;
 }
 ipcMain.handle("loma:getDbxToken", async (_e, key) => {
-  if (!key) throw new Error("App Key Dropbox mancante");
+  key = key || "t4x16xf4p6crrlq";
   let t = readDbx();
   if (t && t.key !== key) { try { fs.unlinkSync(dbxFile()); } catch {} t = null; }
   if (t?.access_token && t.expires_at - Date.now() > 60000) return t.access_token;

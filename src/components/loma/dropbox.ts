@@ -11,7 +11,8 @@ const CONTENT = "https://content.dropboxapi.com/2";
 const RAW = /\.(dng|cr2|cr3|nef|arw|rw2|orf|raf|tiff?|psd|psb|heic|heif|jpe?g|png|webp|avif|gif|bmp)$/i;
 const MIME: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", avif: "image/avif", bmp: "image/bmp", tif: "image/tiff", tiff: "image/tiff", heic: "image/heic", heif: "image/heif" };
 
-export const getDbxKey = () => localStorage.getItem(CKEY) || "";
+export const DEFAULT_DBX_KEY = "t4x16xf4p6crrlq";
+export const getDbxKey = () => localStorage.getItem(CKEY) || DEFAULT_DBX_KEY;
 export const setDbxKey = (v: string) => localStorage.setItem(CKEY, v.trim());
 export const isDbxKey = (v: string) => /^[a-z0-9]{10,20}$/i.test(v.trim());
 
