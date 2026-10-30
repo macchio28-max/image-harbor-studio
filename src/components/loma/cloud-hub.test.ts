@@ -13,3 +13,13 @@ describe("parseFolderId", () => {
     expect(parseFolderId("ciao")).toBe("");
   });
 });
+
+import { parseOneDriveFolder } from "./onedrive";
+describe("parseOneDriveFolder", () => {
+  it("accepts share links, paths and item IDs", () => {
+    expect(parseOneDriveFolder("https://1drv.ms/f/s!AbcDEF")).toBe("https://1drv.ms/f/s!AbcDEF");
+    expect(parseOneDriveFolder("/Foto/Lavorati/")).toBe("/Foto/Lavorati");
+    expect(parseOneDriveFolder("ABC123!456")).toBe("ABC123!456");
+    expect(parseOneDriveFolder("https://example.com/x")).toBe("");
+  });
+});

@@ -7,7 +7,7 @@ export type CloudFile = { id: string; name: string; mimeType: string; size?: num
 
 export const CLOUD_SERVICES: { id: CloudService; name: string; ready: boolean }[] = [
   { id: "gdrive", name: "Google Drive", ready: true },
-  { id: "onedrive", name: "OneDrive (presto)", ready: false },
+  { id: "onedrive", name: "OneDrive", ready: true },
   { id: "dropbox", name: "Dropbox (presto)", ready: false },
 ];
 
@@ -135,3 +135,17 @@ export async function uploadFile(folderId: string, file: Blob, name: string, onP
     x.send(body);
   });
 }
+
+// ---- Service dispatch (Google Drive / OneDrive) ----
+import * as od from "./onedrive";
+export const svcParse = (s: CloudService, v: string) => (s === "onedrive" ? od.parseOneDriveFolder(v) : parseFolderId(v));
+export const svcSignedIn = (s: CloudService) => (s === "onedrive" ? od.msSignedIn() : isSignedIn());
+export const svcRefresh = (s: CloudService) => (s === "onedrive" ? od.msRefreshSigned() : refreshSignedIn());
+export const svcSignOut = (s: CloudService) => (s === "onedrive" ? od.msSignOut() : signOut());
+export const svcToken = (s: CloudService) => (s === "onedrive" ? od.msToken() : getToken());
+export const svcList = (p: CloudProfile) => (p.service === "onedrive" ? od.msList(p.folder) : listImages(p.folder));
+export const svcDownload = (p: CloudProfile, f: CloudFile) => (p.service === "onedrive" ? od.msDownload(f) : downloadFile(f));
+export const svcFolderName = (p: CloudProfile) => (p.service === "onedrive" ? od.msFolderName(p.folder) : folderName(p.folder));
+export const svcUpload = (p: CloudProfile, f: Blob, name: string, cb?: (x: number) => void) =>
+  p.service === "onedrive" ? od.msUpload(p.folder, f, name, cb) : uploadFile(p.folder, f, name, cb);
+export const svcLabel = (s: CloudService) => (s === "onedrive" ? "Microsoft" : "Google");

@@ -30,5 +30,8 @@ contextBridge.exposeInMainWorld("lomaDesktop", {
   getGoogleToken: () => ipcRenderer.invoke("loma:getGoogleToken"),
   hasGoogleToken: () => ipcRenderer.invoke("loma:hasGoogleToken"),
   signOutGoogle: () => ipcRenderer.invoke("loma:signOutGoogle"),
+  getMsToken: (cid) => ipcRenderer.invoke("loma:getMsToken", cid),
+  hasMsToken: () => ipcRenderer.invoke("loma:hasMsToken"),
+  signOutMs: () => ipcRenderer.invoke("loma:signOutMs"),
   showInFolder: (p) => ipcRenderer.invoke("loma:showInFolder", p),
 });

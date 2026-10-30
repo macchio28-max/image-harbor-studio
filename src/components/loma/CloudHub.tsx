@@ -3,8 +3,9 @@ import { Cloud, Plus, Trash2, Pencil, Settings, X, Check, LogOut, Download, Uplo
 import { toast } from "sonner";
 import {
   type CloudProfile, type CloudFile, CLOUD_SERVICES, loadProfiles, saveProfiles, getClientId, setClientId,
-  parseFolderId, listImages, downloadFile, uploadFile, folderName, isSignedIn, signOut, getToken, hasDesktopAuth, refreshSignedIn,
+  hasDesktopAuth, svcParse, svcSignedIn, svcRefresh, svcSignOut, svcToken, svcList, svcDownload, svcFolderName, svcUpload, svcLabel,
 } from "./cloud-hub";
+import { getMsClientId, setMsClientId, isMsClientId } from "./onedrive";
 
 export type UploadKind = "developed" | "original" | "clean";
 type Props = {
@@ -23,22 +24,24 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFiles, count = 
   const [mode, setMode] = useState(initial);
   const [list, setList] = useState<CloudProfile[]>(loadProfiles);
   const [cid, setCid] = useState(getClientId);
-  const [settings, setSettings] = useState(!hasDesktopAuth() && !getClientId());
+  const [mcid, setMcid] = useState(getMsClientId);
+  const [settings, setSettings] = useState(!hasDesktopAuth() && !getClientId() && !getMsClientId());
   const desktop = hasDesktopAuth();
-  useEffect(() => { refreshSignedIn().then(setSigned); }, []);
   const [edit, setEdit] = useState<CloudProfile | null>(list.length ? null : { id: "", name: "", service: "gdrive", folder: "" });
   const [sel, setSel] = useState<string>(list[0]?.id ?? "");
   const [kind, setKind] = useState<UploadKind>("developed");
   const [busy, setBusy] = useState<number | null>(null);
   const [files, setFiles] = useState<CloudFile[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [signed, setSigned] = useState(isSignedIn());
   const prof = list.find((p) => p.id === sel);
+  const svc = prof?.service ?? "gdrive";
+  const [signed, setSigned] = useState(svcSignedIn(svc));
+  useEffect(() => { setSigned(svcSignedIn(svc)); svcRefresh(svc).then(setSigned); }, [svc]);
   const update = (l: CloudProfile[]) => { setList(l); saveProfiles(l); };
 
   const saveEdit = () => {
     if (!edit) return;
-    const p = { ...edit, id: edit.id || String(Date.now()), folder: parseFolderId(edit.folder) };
+    const p = { ...edit, id: edit.id || String(Date.now()), folder: svcParse(edit.service, edit.folder) };
     update(edit.id ? list.map((x) => (x.id === p.id ? p : x)) : [...list, p]);
     setSel(p.id); setEdit(null);
   };
@@ -49,10 +52,10 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFiles, count = 
     if (!prof) return;
     try {
       setBusy(0);
-      await getToken(); setSigned(true);
+      await svcToken(prof.service); setSigned(true);
       const fs = await makeFiles(kind);
-      for (let i = 0; i < fs.length; i++) { const f = fs[i]!; await uploadFile(prof.folder, f, f.name, (p) => setBusy((i + p) / fs.length)); }
-      const fn = await folderName(prof.folder).catch(() => prof.name);
+      for (let i = 0; i < fs.length; i++) { const f = fs[i]!; await svcUpload(prof, f, f.name, (p) => setBusy((i + p) / fs.length)); }
+      const fn = await svcFolderName(prof).catch(() => prof.name);
       setBusy(null);
       toast.success(fs.length > 1 ? `${fs.length} foto caricate con successo in ${fn}` : `Caricato con successo in ${fn}`, { duration: 3000 });
       onClose();
@@ -62,14 +65,14 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFiles, count = 
   useEffect(() => { setFiles(null); setPicked(new Set()); }, [sel, mode]);
   const browse = async () => {
     if (!prof) return;
-    try { setBusy(0); const l = await listImages(prof.folder); setSigned(true); setFiles(l); setBusy(null); } catch (e) { fail(e); }
+    try { setBusy(0); const l = await svcList(prof); setSigned(true); setFiles(l); setBusy(null); } catch (e) { fail(e); }
   };
   const doImport = async () => {
     const chosen = (files ?? []).filter((f) => picked.has(f.id));
     if (!chosen.length) return;
     try {
       const out: File[] = [];
-      for (let i = 0; i < chosen.length; i++) { setBusy(i / chosen.length); out.push(await downloadFile(chosen[i]!)); }
+      for (let i = 0; i < chosen.length; i++) { setBusy(i / chosen.length); out.push(await svcDownload(prof!, chosen[i]!)); }
       setBusy(null); onImport(out); onClose();
       toast.success(`${out.length} foto importate da ${prof?.name}`, { duration: 2000 });
     } catch (e) { fail(e); }
@@ -87,15 +90,16 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFiles, count = 
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
           <Cloud className="h-5 w-5 text-primary" />
           <h2 className="flex-1 text-base font-semibold">Cloud Hub</h2>
-          {signed && <button title="Esci da Google" onClick={() => { signOut(); setSigned(false); }} className="rounded p-2 text-muted-foreground hover:bg-accent"><LogOut className="h-4 w-4" /></button>}
-          {desktop && !signed && <button onClick={async () => { try { await getToken(); setSigned(true); toast.success("Collegato a Google Drive", { duration: 1000 }); } catch (e) { fail(e); } }} className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground">Accedi a Google</button>}
-          {desktop && signed && <span className="text-xs text-primary">Drive collegato</span>}
-          {!desktop && <button title="Impostazioni" onClick={() => setSettings((s) => !s)} className="rounded p-2 text-muted-foreground hover:bg-accent"><Settings className="h-4 w-4" /></button>}
+          {signed && <span className="text-xs text-primary">{svc === "onedrive" ? "OneDrive" : "Drive"} collegato</span>}
+          {signed && <button title={`Esci da ${svcLabel(svc)}`} onClick={() => { svcSignOut(svc); setSigned(false); }} className="rounded p-2 text-muted-foreground hover:bg-accent"><LogOut className="h-4 w-4" /></button>}
+          {!signed && (desktop || svc === "onedrive") && <button onClick={async () => { try { await svcToken(svc); setSigned(true); toast.success(`Collegato a ${svc === "onedrive" ? "OneDrive" : "Google Drive"}`, { duration: 1000 }); } catch (e) { fail(e); } }} className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground">Accedi a {svcLabel(svc)}</button>}
+          {<button title="Impostazioni" onClick={() => setSettings((s) => !s)} className="rounded p-2 text-muted-foreground hover:bg-accent"><Settings className="h-4 w-4" /></button>}
           <button aria-label="Chiudi" onClick={onClose} className="rounded p-2 text-muted-foreground hover:bg-accent"><X className="h-4 w-4" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           {settings && (
-            <div className="mb-4 rounded border border-border p-3">
+            <div className="mb-4 space-y-3">
+            {!desktop && <div className="rounded border border-border p-3">
               <div className="mb-1 text-sm font-medium">Google Client ID</div>
               <input value={cid} onChange={(e) => setCid(e.target.value)} placeholder="1234…apps.googleusercontent.com" className={inp} />
               <ol className="mt-2 list-decimal space-y-0.5 pl-4 text-xs text-muted-foreground">
@@ -105,8 +109,22 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFiles, count = 
                 <li>Origini JavaScript: {typeof location !== "undefined" ? location.origin : ""} (e l'indirizzo pubblicato).</li>
                 <li>Copia qui l'ID client.</li>
               </ol>
-              <button disabled={!cid.endsWith(".apps.googleusercontent.com")} onClick={() => { setClientId(cid); signOut(); setSigned(false); setSettings(false); toast.success("Client ID salvato", { duration: 1000 }); }}
+              <button disabled={!cid.endsWith(".apps.googleusercontent.com")} onClick={() => { setClientId(cid); svcSignOut("gdrive"); if (svc === "gdrive") setSigned(false); setSettings(false); toast.success("Client ID salvato", { duration: 1000 }); }}
                 className="mt-2 w-full rounded bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50">Salva Client ID</button>
+            </div>}
+            <div className="rounded border border-border p-3">
+              <div className="mb-1 text-sm font-medium">Microsoft Client ID (Application ID) · OneDrive</div>
+              <input value={mcid} onChange={(e) => setMcid(e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" className={inp} />
+              <ol className="mt-2 list-decimal space-y-0.5 pl-4 text-xs text-muted-foreground">
+                <li>portal.azure.com → Registrazioni app → Nuova registrazione, account "qualsiasi + personali Microsoft".</li>
+                <li>Autenticazione → piattaforma "Applicazione a pagina singola": {typeof location !== "undefined" ? `${location.origin}/` : ""} (e l'indirizzo pubblicato con / finale).</li>
+                <li>Per la versione desktop aggiungi anche "App per dispositivi mobili e desktop" con http://localhost.</li>
+                <li>Autorizzazioni API → Microsoft Graph → delegate: Files.ReadWrite.All, offline_access.</li>
+                <li>Copia qui l'ID applicazione (client).</li>
+              </ol>
+              <button disabled={!isMsClientId(mcid)} onClick={() => { setMsClientId(mcid); svcSignOut("onedrive"); if (svc === "onedrive") setSigned(false); setSettings(false); toast.success("Microsoft Client ID salvato", { duration: 1000 }); }}
+                className="mt-2 w-full rounded bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50">Salva Microsoft Client ID</button>
+            </div>
             </div>
           )}
 
@@ -131,9 +149,9 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFiles, count = 
                 <select value={edit.service} onChange={(e) => setEdit({ ...edit, service: e.target.value as CloudProfile["service"] })} className={`${inp} mb-2`}>
                   {CLOUD_SERVICES.map((s) => <option key={s.id} value={s.id} disabled={!s.ready}>{s.name}</option>)}
                 </select>
-                <input value={edit.folder} onChange={(e) => setEdit({ ...edit, folder: e.target.value })} placeholder="Link cartella Drive o ID" className={`${inp} mb-2`} />
+                <input value={edit.folder} onChange={(e) => setEdit({ ...edit, folder: e.target.value })} placeholder={edit.service === "onedrive" ? "Link condivisione OneDrive, percorso (/Foto/Lavorati) o ID" : "Link cartella Drive o ID"} className={`${inp} mb-2`} />
                 <div className="flex gap-2">
-                  <button disabled={!edit.name.trim() || !parseFolderId(edit.folder)} onClick={saveEdit} className="flex-1 rounded bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50">Salva profilo</button>
+                  <button disabled={!edit.name.trim() || !svcParse(edit.service, edit.folder)} onClick={saveEdit} className="flex-1 rounded bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50">Salva profilo</button>
                   {list.length > 0 && <button onClick={() => setEdit(null)} className="rounded bg-secondary px-3 py-2 text-sm">Annulla</button>}
                 </div>
               </div>
