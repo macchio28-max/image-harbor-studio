@@ -239,6 +239,58 @@ ipcMain.handle("loma:getMsToken", async (_e, cid) => {
 });
 ipcMain.handle("loma:hasMsToken", () => { const t = readMs(); return !!(t && (t.refresh_token || t.expires_at > Date.now())); });
 ipcMain.handle("loma:signOutMs", () => { try { fs.unlinkSync(msFile()); } catch {} return true; });
+// ---- Dropbox OAuth (PKCE public client, loopback on fixed port 53682; App Key from app settings) ----
+const dbxFile = () => path.join(app.getPath("userData"), "dropbox_token.json");
+const readDbx = () => { try { return JSON.parse(fs.readFileSync(dbxFile(), "utf8")); } catch { return null; } };
+const DBX_REDIRECT = "http://localhost:53682/";
+async function dbxTokenReq(key, params) {
+  const r = await fetch("https://api.dropboxapi.com/oauth2/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: key, ...params }).toString() });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) throw new Error(j.error_description || j.error || `Dropbox [${r.status}]`);
+  const t = { key, access_token: j.access_token, refresh_token: j.refresh_token || params.refresh_token, expires_at: Date.now() + Number(j.expires_in || 14400) * 1000 };
+  fs.writeFileSync(dbxFile(), JSON.stringify(t));
+  return t;
+}
+let dbxLoginP = null;
+function dbxLoopback(key) {
+  dbxLoginP ??= new Promise((res, rej) => {
+    const http = require("http"), crypto = require("crypto");
+    const b64u = (b) => b.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const verifier = b64u(crypto.randomBytes(32));
+    const challenge = b64u(crypto.createHash("sha256").update(verifier).digest());
+    const srv = http.createServer(async (req, rsp) => {
+      const u = new globalThis.URL(req.url, "http://localhost");
+      const code = u.searchParams.get("code"), err = u.searchParams.get("error");
+      if (!code && !err) { rsp.writeHead(404); return rsp.end(); }
+      rsp.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      rsp.end(err ? `<meta charset="utf-8"><p>Accesso annullato: ${err}</p>` : OK_HTML);
+      srv.close(); clearTimeout(to);
+      const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.show(); w.focus(); }
+      if (err) return rej(new Error(u.searchParams.get("error_description") || "Accesso annullato"));
+      try { res(await dbxTokenReq(key, { code, grant_type: "authorization_code", redirect_uri: DBX_REDIRECT, code_verifier: verifier })); } catch (e) { rej(e); }
+    });
+    const to = setTimeout(() => { srv.close(); rej(new Error("Tempo scaduto per l'accesso Dropbox")); }, 5 * 60 * 1000);
+    srv.on("error", (e) => { clearTimeout(to); rej(new Error(`Porta 53682 occupata: ${e.message}`)); });
+    srv.listen(53682, "127.0.0.1", () => {
+      const q = new URLSearchParams({ client_id: key, redirect_uri: DBX_REDIRECT, response_type: "code", token_access_type: "offline",
+        code_challenge: challenge, code_challenge_method: "S256" });
+      shell.openExternal(`https://www.dropbox.com/oauth2/authorize?${q}`);
+    });
+  }).finally(() => { dbxLoginP = null; });
+  return dbxLoginP;
+}
+ipcMain.handle("loma:getDbxToken", async (_e, key) => {
+  if (!key) throw new Error("App Key Dropbox mancante");
+  let t = readDbx();
+  if (t && t.key !== key) { try { fs.unlinkSync(dbxFile()); } catch {} t = null; }
+  if (t?.access_token && t.expires_at - Date.now() > 60000) return t.access_token;
+  if (t?.refresh_token) { try { return (await dbxTokenReq(key, { refresh_token: t.refresh_token, grant_type: "refresh_token" })).access_token; } catch {} }
+  if (t) { try { fs.unlinkSync(dbxFile()); } catch {} }
+  return (await dbxLoopback(key)).access_token;
+});
+ipcMain.handle("loma:hasDbxToken", () => { const t = readDbx(); return !!(t && (t.refresh_token || t.expires_at > Date.now())); });
+ipcMain.handle("loma:signOutDbx", () => { try { fs.unlinkSync(dbxFile()); } catch {} return true; });
 ipcMain.handle("loma:openExternal", (_e, u) => (/^https?:\/\//.test(u) ? shell.openExternal(u) : null));
 
 app.whenReady().then(() => {

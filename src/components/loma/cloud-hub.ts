@@ -9,7 +9,7 @@ export const CLOUD_SERVICES: { id: CloudService; name: string; ready: boolean }[
   { id: "gdrive", name: "Google Drive", ready: true },
   { id: "onedrive", name: "OneDrive", ready: true },
   { id: "local", name: "Cartella locale (iCloud / Disco / Cartella)", ready: typeof window !== "undefined" && !!(window as any).lomaDesktop?.listFolder },
-  { id: "dropbox", name: "Dropbox (presto)", ready: false },
+  { id: "dropbox", name: "Dropbox", ready: true },
 ];
 
 const PKEY = "loma.cloud.profiles";
@@ -156,14 +156,15 @@ const lastSeg = (p: string) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || 
 
 // ---- Service dispatch (Google Drive / OneDrive) ----
 import * as od from "./onedrive";
-export const svcParse = (s: CloudService, v: string) => (s === "local" ? v.trim() : s === "onedrive" ? od.parseOneDriveFolder(v) : parseFolderId(v));
-export const svcSignedIn = (s: CloudService) => (s === "local" ? true : s === "onedrive" ? od.msSignedIn() : isSignedIn());
-export const svcRefresh = (s: CloudService) => (s === "local" ? Promise.resolve(true) : s === "onedrive" ? od.msRefreshSigned() : refreshSignedIn());
-export const svcSignOut = (s: CloudService) => (s === "local" ? undefined : s === "onedrive" ? od.msSignOut() : signOut());
-export const svcToken = (s: CloudService) => (s === "local" ? Promise.resolve("") : s === "onedrive" ? od.msToken() : getToken());
-export const svcList = (p: CloudProfile) => (p.service === "local" ? localList(p.folder) : p.service === "onedrive" ? od.msList(p.folder) : listImages(p.folder));
-export const svcDownload = (p: CloudProfile, f: CloudFile) => (p.service === "local" ? localRead(p.folder, f) : p.service === "onedrive" ? od.msDownload(f) : downloadFile(f));
-export const svcFolderName = (p: CloudProfile) => (p.service === "local" ? Promise.resolve(lastSeg(p.folder)) : p.service === "onedrive" ? od.msFolderName(p.folder) : folderName(p.folder));
+import * as dbx from "./dropbox";
+export const svcParse = (s: CloudService, v: string) => (s === "dropbox" ? dbx.parseDropboxFolder(v) : s === "local" ? v.trim() : s === "onedrive" ? od.parseOneDriveFolder(v) : parseFolderId(v));
+export const svcSignedIn = (s: CloudService) => (s === "dropbox" ? dbx.dbxSignedIn() : s === "local" ? true : s === "onedrive" ? od.msSignedIn() : isSignedIn());
+export const svcRefresh = (s: CloudService) => (s === "dropbox" ? dbx.dbxRefreshSigned() : s === "local" ? Promise.resolve(true) : s === "onedrive" ? od.msRefreshSigned() : refreshSignedIn());
+export const svcSignOut = (s: CloudService) => (s === "dropbox" ? dbx.dbxSignOut() : s === "local" ? undefined : s === "onedrive" ? od.msSignOut() : signOut());
+export const svcToken = (s: CloudService) => (s === "dropbox" ? dbx.dbxToken() : s === "local" ? Promise.resolve("") : s === "onedrive" ? od.msToken() : getToken());
+export const svcList = (p: CloudProfile) => (p.service === "dropbox" ? dbx.dbxList(p.folder) : p.service === "local" ? localList(p.folder) : p.service === "onedrive" ? od.msList(p.folder) : listImages(p.folder));
+export const svcDownload = (p: CloudProfile, f: CloudFile) => (p.service === "dropbox" ? dbx.dbxDownload(f) : p.service === "local" ? localRead(p.folder, f) : p.service === "onedrive" ? od.msDownload(f) : downloadFile(f));
+export const svcFolderName = (p: CloudProfile) => (p.service === "dropbox" ? dbx.dbxFolderName(p.folder) : p.service === "local" ? Promise.resolve(lastSeg(p.folder)) : p.service === "onedrive" ? od.msFolderName(p.folder) : folderName(p.folder));
 export const svcUpload = (p: CloudProfile, f: Blob, name: string, cb?: (x: number) => void) =>
-  p.service === "local" ? localSave(p.folder, f, name) : p.service === "onedrive" ? od.msUpload(p.folder, f, name, cb) : uploadFile(p.folder, f, name, cb);
-export const svcLabel = (s: CloudService) => (s === "onedrive" ? "Microsoft" : "Google");
+  p.service === "dropbox" ? dbx.dbxUpload(p.folder, f, name, cb) : p.service === "local" ? localSave(p.folder, f, name) : p.service === "onedrive" ? od.msUpload(p.folder, f, name, cb) : uploadFile(p.folder, f, name, cb);
+export const svcLabel = (s: CloudService) => (s === "dropbox" ? "Dropbox" : s === "onedrive" ? "Microsoft" : "Google");
