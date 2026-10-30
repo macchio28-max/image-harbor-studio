@@ -3,7 +3,7 @@
 
 export type CloudService = "gdrive" | "onedrive" | "dropbox";
 export type CloudProfile = { id: string; name: string; service: CloudService; folder: string };
-export type CloudFile = { id: string; name: string; mimeType: string; size?: number; thumb?: string };
+export type CloudFile = { id: string; name: string; mimeType: string; size?: number | undefined; thumb?: string | undefined };
 
 export const CLOUD_SERVICES: { id: CloudService; name: string; ready: boolean }[] = [
   { id: "gdrive", name: "Google Drive", ready: true },

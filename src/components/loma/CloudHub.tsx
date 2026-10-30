@@ -13,7 +13,7 @@ type Props = {
   hasImage: boolean;
   makeFile: (kind: UploadKind) => Promise<File>;
   onImport: (files: File[]) => void;
-  onQuickDesktop?: () => void;
+  onQuickDesktop?: (() => void) | undefined;
 };
 
 const inp = "w-full rounded border border-input bg-background px-2 py-2 text-sm";

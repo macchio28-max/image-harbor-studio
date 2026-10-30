@@ -1450,7 +1450,7 @@ export function LomaViewer() {
       {mailAsk && <MailChoice onClose={() => setMailAsk(false)} onPick={(a) => { setMailAsk(false); mail(a); }} />}
       {cloudHub && (
         <CloudHub mode={cloudHub} onClose={() => setCloudHub(null)} hasImage={!!img}
-          onQuickDesktop={desk ? () => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive") : undefined}
+          onQuickDesktop={typeof window !== "undefined" && (window as any).lomaDesktop ? () => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive") : undefined}
           onImport={(fs) => { const dt = new DataTransfer(); fs.forEach((f) => dt.items.add(f)); importRef.current(dt.files); }}
           makeFile={async (k) => {
             if (k === "original") return img!.file;
