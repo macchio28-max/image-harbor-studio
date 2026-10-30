@@ -41,12 +41,31 @@ function loadGis() {
   });
   return gisLoading;
 }
-export const isSignedIn = () => !!token && token.exp > Date.now();
+const desk = () => (typeof window !== "undefined" ? (window as any).lomaDesktop : undefined);
+export const hasDesktopAuth = () => !!desk()?.getGoogleToken;
+const DKEY = "loma.cloud.desktopSigned";
+export const isSignedIn = () => (hasDesktopAuth() ? localStorage.getItem(DKEY) === "1" : !!token && token.exp > Date.now());
+/** Desktop: ask the main process whether a stored token file exists (keeps the UI flag in sync). */
+export async function refreshSignedIn(): Promise<boolean> {
+  if (!hasDesktopAuth()) return isSignedIn();
+  const v = !!(await desk().hasGoogleToken?.().catch(() => false));
+  localStorage.setItem(DKEY, v ? "1" : "0");
+  return v;
+}
 export function signOut() {
+  if (hasDesktopAuth()) { localStorage.setItem(DKEY, "0"); token = null; desk().signOutGoogle?.(); return; }
   if (token) try { (window as any).google?.accounts?.oauth2?.revoke(token.v, () => {}); } catch {}
   token = null;
 }
 export async function getToken(): Promise<string> {
+  if (hasDesktopAuth()) {
+    // Main process caches/refreshes the token and runs the loopback login when needed.
+    if (token && token.exp > Date.now()) return token.v;
+    const v: string = await desk().getGoogleToken();
+    token = { v, exp: Date.now() + 50 * 60 * 1000 };
+    localStorage.setItem(DKEY, "1");
+    return v;
+  }
   if (isSignedIn()) return token!.v;
   const cid = getClientId();
   if (!cid) throw new Error("Inserisci prima il Google Client ID nelle impostazioni del Cloud Hub.");
