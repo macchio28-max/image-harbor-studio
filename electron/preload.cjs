@@ -39,4 +39,17 @@ contextBridge.exposeInMainWorld("lomaDesktop", {
   listFolder: (dir) => ipcRenderer.invoke("loma:listFolder", dir),
   readFolderFile: (dir, name) => ipcRenderer.invoke("loma:readFolderFile", dir, name),
   showInFolder: (p) => ipcRenderer.invoke("loma:showInFolder", p),
+  ftp: {
+    ips: () => ipcRenderer.invoke("loma:ftpIPs"),
+    defaultDir: () => ipcRenderer.invoke("loma:ftpDefaultDir"),
+    status: () => ipcRenderer.invoke("loma:ftpStatus"),
+    start: (cfg) => ipcRenderer.invoke("loma:ftpStart", cfg),
+    stop: () => ipcRenderer.invoke("loma:ftpStop"),
+    test: (p) => ipcRenderer.invoke("loma:ftpTest", p),
+    list: (p) => ipcRenderer.invoke("loma:ftpList", p),
+    download: (p, name) => ipcRenderer.invoke("loma:ftpDownload", p, name),
+    upload: async (p, name, blob) => ipcRenderer.invoke("loma:ftpUpload", p, name, new Uint8Array(await blob.arrayBuffer())),
+    onFile: (cb) => { const h = (_e, f) => cb(f); ipcRenderer.on("loma:ftpFile", h); return () => ipcRenderer.removeListener("loma:ftpFile", h); },
+    onLog: (cb) => { const h = (_e, m) => cb(m); ipcRenderer.on("loma:ftpLog", h); return () => ipcRenderer.removeListener("loma:ftpLog", h); },
+  },
 });
