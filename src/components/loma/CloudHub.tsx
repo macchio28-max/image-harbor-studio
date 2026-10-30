@@ -57,7 +57,8 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFiles, count = 
       for (let i = 0; i < fs.length; i++) { const f = fs[i]!; await svcUpload(prof, f, f.name, (p) => setBusy((i + p) / fs.length)); }
       const fn = await svcFolderName(prof).catch(() => prof.name);
       setBusy(null);
-      toast.success(fs.length > 1 ? `${fs.length} foto caricate con successo in ${fn}` : `Caricato con successo in ${fn}`, { duration: 3000 });
+      const verb = prof.service === "local" ? "salvat" : "caricat";
+      toast.success(fs.length > 1 ? `${fs.length} foto ${verb}e in ${fn}` : `${verb === "salvat" ? "Salvato" : "Caricato"} con successo in ${fn}`, { duration: 3000 });
       onClose();
     } catch (e) { fail(e); }
   };
