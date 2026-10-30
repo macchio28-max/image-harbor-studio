@@ -1,13 +1,14 @@
 // Cloud Hub: folder profiles + direct Google Drive API (browser OAuth token via Google Identity Services).
 // Architecture is service-agnostic: OneDrive/Dropbox can add their own driver later.
 
-export type CloudService = "gdrive" | "onedrive" | "dropbox";
+export type CloudService = "gdrive" | "onedrive" | "dropbox" | "local";
 export type CloudProfile = { id: string; name: string; service: CloudService; folder: string };
 export type CloudFile = { id: string; name: string; mimeType: string; size?: number | undefined; thumb?: string | undefined };
 
 export const CLOUD_SERVICES: { id: CloudService; name: string; ready: boolean }[] = [
   { id: "gdrive", name: "Google Drive", ready: true },
   { id: "onedrive", name: "OneDrive", ready: true },
+  { id: "local", name: "Cartella locale (iCloud / Disco / Cartella)", ready: typeof window !== "undefined" && !!(window as any).lomaDesktop?.listFolder },
   { id: "dropbox", name: "Dropbox (presto)", ready: false },
 ];
 
@@ -136,16 +137,33 @@ export async function uploadFile(folderId: string, file: Blob, name: string, onP
   });
 }
 
+// ---- Local folder (desktop Electron: iCloud Drive, external disk, any folder) ----
+const MIME: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", avif: "image/avif", bmp: "image/bmp", tif: "image/tiff", tiff: "image/tiff", heic: "image/heic", heif: "image/heif" };
+const needDesk = () => { const d = desk(); if (!d?.listFolder) throw new Error("Le cartelle locali funzionano nella versione desktop di LoMa VIEWER."); return d; };
+export async function localList(dir: string): Promise<CloudFile[]> {
+  const l: { name: string; size: number }[] = await needDesk().listFolder(dir);
+  return l.map((f) => ({ id: f.name, name: f.name, size: f.size, mimeType: MIME[f.name.split(".").pop()!.toLowerCase()] || "application/octet-stream" }));
+}
+export async function localRead(dir: string, f: CloudFile): Promise<File> {
+  const b: Uint8Array = await needDesk().readFolderFile(dir, f.name);
+  return new File([b as BlobPart], f.name, { type: f.mimeType });
+}
+export async function localSave(dir: string, file: Blob, name: string) {
+  const r = await needDesk().saveToFolder(dir, name, file);
+  if (!r?.ok) throw new Error(r?.error === "no-dir" ? "Cartella non trovata (disco scollegato?)" : `Salvataggio non riuscito: ${r?.error}`);
+}
+const lastSeg = (p: string) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p;
+
 // ---- Service dispatch (Google Drive / OneDrive) ----
 import * as od from "./onedrive";
-export const svcParse = (s: CloudService, v: string) => (s === "onedrive" ? od.parseOneDriveFolder(v) : parseFolderId(v));
-export const svcSignedIn = (s: CloudService) => (s === "onedrive" ? od.msSignedIn() : isSignedIn());
-export const svcRefresh = (s: CloudService) => (s === "onedrive" ? od.msRefreshSigned() : refreshSignedIn());
-export const svcSignOut = (s: CloudService) => (s === "onedrive" ? od.msSignOut() : signOut());
-export const svcToken = (s: CloudService) => (s === "onedrive" ? od.msToken() : getToken());
-export const svcList = (p: CloudProfile) => (p.service === "onedrive" ? od.msList(p.folder) : listImages(p.folder));
-export const svcDownload = (p: CloudProfile, f: CloudFile) => (p.service === "onedrive" ? od.msDownload(f) : downloadFile(f));
-export const svcFolderName = (p: CloudProfile) => (p.service === "onedrive" ? od.msFolderName(p.folder) : folderName(p.folder));
+export const svcParse = (s: CloudService, v: string) => (s === "local" ? v.trim() : s === "onedrive" ? od.parseOneDriveFolder(v) : parseFolderId(v));
+export const svcSignedIn = (s: CloudService) => (s === "local" ? true : s === "onedrive" ? od.msSignedIn() : isSignedIn());
+export const svcRefresh = (s: CloudService) => (s === "local" ? Promise.resolve(true) : s === "onedrive" ? od.msRefreshSigned() : refreshSignedIn());
+export const svcSignOut = (s: CloudService) => (s === "local" ? undefined : s === "onedrive" ? od.msSignOut() : signOut());
+export const svcToken = (s: CloudService) => (s === "local" ? Promise.resolve("") : s === "onedrive" ? od.msToken() : getToken());
+export const svcList = (p: CloudProfile) => (p.service === "local" ? localList(p.folder) : p.service === "onedrive" ? od.msList(p.folder) : listImages(p.folder));
+export const svcDownload = (p: CloudProfile, f: CloudFile) => (p.service === "local" ? localRead(p.folder, f) : p.service === "onedrive" ? od.msDownload(f) : downloadFile(f));
+export const svcFolderName = (p: CloudProfile) => (p.service === "local" ? Promise.resolve(lastSeg(p.folder)) : p.service === "onedrive" ? od.msFolderName(p.folder) : folderName(p.folder));
 export const svcUpload = (p: CloudProfile, f: Blob, name: string, cb?: (x: number) => void) =>
-  p.service === "onedrive" ? od.msUpload(p.folder, f, name, cb) : uploadFile(p.folder, f, name, cb);
+  p.service === "local" ? localSave(p.folder, f, name) : p.service === "onedrive" ? od.msUpload(p.folder, f, name, cb) : uploadFile(p.folder, f, name, cb);
 export const svcLabel = (s: CloudService) => (s === "onedrive" ? "Microsoft" : "Google");
