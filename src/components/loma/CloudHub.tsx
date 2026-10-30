@@ -11,14 +11,15 @@ type Props = {
   mode: "upload" | "import";
   onClose: () => void;
   hasImage: boolean;
-  makeFile: (kind: UploadKind) => Promise<File>;
+  makeFiles: (kind: UploadKind) => Promise<File[]>;
+  count?: number;
   onImport: (files: File[]) => void;
   onQuickDesktop?: (() => void) | undefined;
 };
 
 const inp = "w-full rounded border border-input bg-background px-2 py-2 text-sm";
 
-export function CloudHub({ mode: initial, onClose, hasImage, makeFile, onImport, onQuickDesktop }: Props) {
+export function CloudHub({ mode: initial, onClose, hasImage, makeFiles, count = 1, onImport, onQuickDesktop }: Props) {
   const [mode, setMode] = useState(initial);
   const [list, setList] = useState<CloudProfile[]>(loadProfiles);
   const [cid, setCid] = useState(getClientId);
@@ -49,11 +50,11 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFile, onImport,
     try {
       setBusy(0);
       await getToken(); setSigned(true);
-      const f = await makeFile(kind);
-      await uploadFile(prof.folder, f, f.name, (p) => setBusy(p));
+      const fs = await makeFiles(kind);
+      for (let i = 0; i < fs.length; i++) { const f = fs[i]!; await uploadFile(prof.folder, f, f.name, (p) => setBusy((i + p) / fs.length)); }
       const fn = await folderName(prof.folder).catch(() => prof.name);
       setBusy(null);
-      toast.success(`Caricato con successo in ${fn}`, { duration: 3000 });
+      toast.success(fs.length > 1 ? `${fs.length} foto caricate con successo in ${fn}` : `Caricato con successo in ${fn}`, { duration: 3000 });
       onClose();
     } catch (e) { fail(e); }
   };
@@ -154,7 +155,7 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFile, onImport,
                 ))}
               </div>
               <button disabled={!prof || !hasImage || busy !== null} onClick={upload} className="flex w-full items-center justify-center gap-2 rounded bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50">
-                <Upload className="h-4 w-4" /> {hasImage ? `Carica in ${prof?.name ?? "…"}` : "Apri prima un'immagine"}
+                <Upload className="h-4 w-4" /> {hasImage ? `Carica ${count > 1 ? `${count} foto ` : ""}in ${prof?.name ?? "…"}` : "Apri prima un'immagine"}
               </button>
               {onQuickDesktop && hasImage && (
                 <button onClick={() => { onClose(); onQuickDesktop(); }} className="mt-2 flex w-full items-center justify-center gap-2 rounded bg-secondary px-3 py-2 text-sm hover:bg-accent">
