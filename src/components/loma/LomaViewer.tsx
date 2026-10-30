@@ -484,7 +484,7 @@ export function LomaViewer() {
           await cache.delete(r);
         }
         window.history.replaceState(null, "", "/");
-        if (files.length === 1 && files[0]) await openRef.current(files[0]);
+        if (files.length === 1 && files[0] && !viaFtp) await openRef.current(files[0]);
         else if (files.length > 1) {
           const dt = new DataTransfer();
           files.forEach((f) => dt.items.add(f));
@@ -503,10 +503,11 @@ export function LomaViewer() {
     const receive = async (raw: unknown) => {
       try {
         if (!raw) return;
-        const list = (typeof raw === "string" ? JSON.parse(raw) : raw) as { id?: string; name: string; type?: string; size?: number; data?: string }[] | null;
+        const list = (typeof raw === "string" ? JSON.parse(raw) : raw) as { id?: string; name: string; type?: string; size?: number; data?: string; ftp?: boolean }[] | null;
         if (!Array.isArray(list) || list.length === 0) return;
         console.info("[LomaAndroid] ricevuti", list.length, "file", list.map((f) => f.name));
-        const tid = sonnerToast.loading(list.length === 1 ? "Caricamento immagine da Galleria..." : `Caricamento ${list.length} immagini...`);
+        const viaFtp = list.some((f) => f.ftp);
+        const tid = sonnerToast.loading(viaFtp ? "Ricezione foto FTP..." : list.length === 1 ? "Caricamento immagine da Galleria..." : `Caricamento ${list.length} immagini...`);
         const b64 = (s: string) => {
           const bin = atob(s);
           const bytes = new Uint8Array(bin.length);
@@ -533,7 +534,7 @@ export function LomaViewer() {
         }
         sonnerToast.dismiss(tid);
         if (files.length === 0) return;
-        if (files.length === 1 && files[0]) await openRef.current(files[0]);
+        if (files.length === 1 && files[0] && !viaFtp) await openRef.current(files[0]);
         else {
           const dt = new DataTransfer();
           files.forEach((f) => dt.items.add(f));

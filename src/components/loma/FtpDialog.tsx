@@ -59,6 +59,24 @@ export function FtpDialog({ onClose, onReceived, onImport, hasImage, count, make
     return D.onLog((m: string) => setLogs((l) => [`${new Date().toLocaleTimeString()} ${m}`, ...l].slice(0, 30)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const [adir, setAdir] = useState("");
+  useEffect(() => {
+    if (env !== "android") return;
+    const poll = () => {
+      try {
+        const st = JSON.parse(A.ftpStatus?.() || "{}");
+        if (st.ip) setIps([{ name: "wlan", address: st.ip }]);
+        if (st.dir) setAdir(st.dir);
+        setRunning(!!st.running);
+        const l: string[] = JSON.parse(A.ftpLogs?.() || "[]");
+        if (l.length) setLogs((o) => [...l.reverse().map((m) => `${new Date().toLocaleTimeString()} ${m}`), ...o].slice(0, 30));
+      } catch { /* ignore */ }
+    };
+    poll();
+    const t = window.setInterval(poll, 1500);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [env]);
   useEffect(() => { setFiles(null); setPicked(new Set()); }, [sel]);
 
   const updRx = (r: RxCfg) => { setRx(r); localStorage.setItem(RKEY, JSON.stringify(r)); };
@@ -73,7 +91,8 @@ export function FtpDialog({ onClose, onReceived, onImport, hasImage, count, make
       const r = JSON.parse(A.ftpStart(rx.port, rx.user, rx.pass) || "{}");
       if (r.error) return fail(r.error);
       if (r.ip) setIps([{ name: "wlan", address: r.ip }]);
-      setRunning(true);
+      if (r.dir) setAdir(r.dir);
+      setRunning(true); toast.success("Ricevitore FTP in ascolto", { duration: 1000 });
     }
   };
   const stop = async () => { if (env === "desktop") await D.stop(); else if (env === "android") A.ftpStop?.(); setRunning(false); toast.success("Ricevitore fermato", { duration: 1000 }); };
@@ -200,6 +219,7 @@ export function FtpDialog({ onClose, onReceived, onImport, hasImage, count, make
                   <input ref={simRef} type="file" multiple accept="image/*,.cr2,.cr3,.nef,.arw,.dng,.raf,.orf,.rw2,.tif,.tiff,.psd" hidden onChange={(e) => { const f = Array.from(e.target.files ?? []); e.target.value = ""; if (f.length) { onReceived(f); toast.success(`Simulazione: ${f.length} foto ricevute`, { duration: 1000 }); } }} />
                 </>
               )}
+              {running && env === "android" && adir && <div className="text-xs text-muted-foreground">Tieni LoMa VIEWER aperto in primo piano durante la ricezione. Le foto vengono salvate anche in: {adir}</div>}
               {running && env === "desktop" && <div className="text-xs text-muted-foreground">Le foto vengono salvate in: {rx.dir}</div>}
               <div className="rounded border border-border p-3">
                 <div className="mb-1 text-sm font-medium">Come configurare la fotocamera</div>
