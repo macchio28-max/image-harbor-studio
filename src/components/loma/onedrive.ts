@@ -47,7 +47,7 @@ async function tokenReq(p: Record<string, string>): Promise<Tok> {
     body: new URLSearchParams({ client_id: getMsClientId(), scope: SCOPE, ...p }).toString() });
   const j = await r.json();
   if (!r.ok || !j.access_token) throw new Error(`Microsoft: ${j.error_description?.split("\r\n")[0] || j.error || r.status}`);
-  return { a: j.access_token, r: j.refresh_token || p.refresh_token, exp: Date.now() + (Number(j.expires_in || 3600) - 60) * 1000 };
+  return { a: j.access_token, r: j.refresh_token || p["refresh_token"], exp: Date.now() + (Number(j.expires_in || 3600) - 60) * 1000 };
 }
 
 function popupLogin(): Promise<Tok> {
