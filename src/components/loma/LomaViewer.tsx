@@ -24,6 +24,7 @@ import { Filmstrip } from "./Filmstrip";
 import { ComparePane } from "./ComparePane";
 import { MailChoice, WEBMAIL_PRESETS, serviceOf, type MailAccount } from "./MailChoice";
 import { CloudHub } from "./CloudHub";
+import { FtpDialog } from "./FtpDialog";
 import { convertFile } from "./convert";
 import { stripBlob } from "./sanitize";
 import { ContactSheet } from "./ContactSheet";
@@ -71,6 +72,8 @@ export function LomaViewer() {
   const [waAsk, setWaAsk] = useState(false);
   const [mailAsk, setMailAsk] = useState(false);
   const [cloudHub, setCloudHub] = useState<null | "upload" | "import">(null);
+  const [ftpOpen, setFtpOpen] = useState(false);
+  const [ftpRunning, setFtpRunning] = useState(false);
   const [hist, setHist] = useState<Uint32Array[] | null>(null);
   const preview = useRef<HTMLCanvasElement>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -400,6 +403,49 @@ export function LomaViewer() {
   };
 
   // Desktop: photos opened from Finder/Explorer (double-click or "Apri con").
+  const makeUploadFiles = async (k) => {
+            const sel = multiFiles();
+            if (sel.length > 1) {
+              const out: File[] = [];
+              for (const it of sel) {
+                if (it.id === curId && img) { out.push(await currentFile(k)); continue; }
+                if (k === "original") { out.push(it.file); continue; }
+                const jpg = k === "developed";
+                let b = await convertFile(it.file, { fmt: jpg ? "jpeg" : "png", quality: 92, scale: 1, keepMeta: false, alpha: !jpg, lossless: false });
+                if (!jpg) b = await stripBlob(b);
+                out.push(new File([b], `${baseName(it.file.name)}${jpg ? "_sviluppata.jpg" : "_pulita.png"}`, { type: b.type }));
+              }
+              return out;
+            }
+            return [await currentFile(k)];
+          };
+  // FTP receiver: append arriving photos to the current grid without resetting the session.
+  const appendFiles = async (files: File[]) => {
+    files = files.filter((f) => IMAGE_RE.test(f.name));
+    if (!files.length) return;
+    if (!session.length) { const dt = new DataTransfer(); files.forEach((f) => dt.items.add(f)); return importRef.current(dt.files); }
+    const add: CullItem[] = files.map((file) => ({ id: `ftp${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${file.name}`, file, thumb: null, rating: 0, locked: false, flagged: false }));
+    setSession((s) => [...s, ...add]);
+    setView("grid");
+    toast.success(add.length > 1 ? `${add.length} foto ricevute via FTP` : `Ricevuta via FTP: ${add[0]!.file.name}`, { duration: 1000 });
+    for (const c of add) {
+      const [t, r] = await Promise.all([readCullTags(c.file, { light: true }).catch(() => ({})), readCull(c.file, { light: true }).catch(() => ({}) as Partial<CullItem>)]);
+      setSession((s) => s.map((x) => (x.id === c.id ? { ...x, thumb: (r as any).thumb ?? null, ...t } : x)));
+    }
+  };
+  const appendRef = useRef(appendFiles);
+  appendRef.current = appendFiles;
+  useEffect(() => {
+    const D = typeof window !== "undefined" ? (window as any).lomaDesktop?.ftp : undefined;
+    const A = typeof window !== "undefined" ? (window as any) : undefined;
+    if (A) A.__lomaFtpReceived = (fs: File[]) => appendRef.current(fs);
+    if (!D) return;
+    return D.onFile((f: { name: string; bytes: Uint8Array; path: string }) => {
+      const file = new File([f.bytes as BlobPart], f.name);
+      try { (file as any).path = f.path; } catch {}
+      appendRef.current([file]);
+    });
+  }, []);
   const importRef = useRef(importFiles);
   importRef.current = importFiles;
   useEffect(() => {
@@ -1150,6 +1196,7 @@ export function LomaViewer() {
         <Group last>
           {touch ? (
             <>
+            <Tool icon={<Server className={ftpRunning ? "animate-pulse text-primary" : "text-primary"} />} label="FTP" tip="FTP: ricevi dalla fotocamera, importa e carica" onClick={() => setFtpOpen(true)} />
             <Tool icon={<Cloud className="text-primary" />} label="Hub" tip="Cloud Hub" onClick={() => setCloudHub("upload")} />
             <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => openAI("Google Drive", "https://drive.google.com/", "com.google.android.apps.docs")} />
             <Tool icon={<B.OneDriveIcon />} label="OneDrv" tip="OneDrive" onClick={() => openAI("OneDrive", "https://onedrive.live.com/", "com.microsoft.skydrive")} />
@@ -1159,6 +1206,7 @@ export function LomaViewer() {
             </>
           ) : (
             <>
+            <Tool icon={<Server className={ftpRunning ? "animate-pulse text-primary" : "text-primary"} />} label="FTP" tip="FTP: ricevi dalla fotocamera, importa e carica" onClick={() => setFtpOpen(true)} />
             <Tool icon={<Cloud className="text-primary" />} label="Hub" tip="Cloud Hub: carica / importa nelle cartelle Drive" onClick={() => setCloudHub("upload")} />
             <Tool icon={<B.DriveIcon />} label="Drive" tip="Copia rapida nella cartella Drive del computer" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
             <Tool icon={<B.OneDriveIcon />} label="OneDrv" tip="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
@@ -1470,26 +1518,18 @@ export function LomaViewer() {
       {printSrc && <PrintDialog src={printSrc} onClose={() => { URL.revokeObjectURL(printSrc); setPrintSrc(null); }} />}
       {topazOpen && <TopazSettings onClose={() => setTopazOpen(false)} />}
       {mailAsk && <MailChoice onClose={() => setMailAsk(false)} onPick={(a) => { setMailAsk(false); mail(a); }} />}
+      {ftpOpen && (
+        <FtpDialog onClose={() => setFtpOpen(false)} running={ftpRunning} setRunning={setFtpRunning}
+          onReceived={(fs) => appendRef.current(fs)}
+          onImport={(fs) => { const dt = new DataTransfer(); fs.forEach((f) => dt.items.add(f)); importRef.current(dt.files); }}
+          hasImage={!!img || multiFiles().length > 0} count={multiFiles().length > 1 ? multiFiles().length : 1}
+          makeFiles={makeUploadFiles} />
+      )}
       {cloudHub && (
         <CloudHub mode={cloudHub} onClose={() => setCloudHub(null)} hasImage={!!img || multiFiles().length > 0} count={multiFiles().length > 1 ? multiFiles().length : 1}
           onQuickDesktop={typeof window !== "undefined" && (window as any).lomaDesktop ? () => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive") : undefined}
           onImport={(fs) => { const dt = new DataTransfer(); fs.forEach((f) => dt.items.add(f)); importRef.current(dt.files); }}
-          makeFiles={async (k) => {
-            const sel = multiFiles();
-            if (sel.length > 1) {
-              const out: File[] = [];
-              for (const it of sel) {
-                if (it.id === curId && img) { out.push(await currentFile(k)); continue; }
-                if (k === "original") { out.push(it.file); continue; }
-                const jpg = k === "developed";
-                let b = await convertFile(it.file, { fmt: jpg ? "jpeg" : "png", quality: 92, scale: 1, keepMeta: false, alpha: !jpg, lossless: false });
-                if (!jpg) b = await stripBlob(b);
-                out.push(new File([b], `${baseName(it.file.name)}${jpg ? "_sviluppata.jpg" : "_pulita.png"}`, { type: b.type }));
-              }
-              return out;
-            }
-            return [await currentFile(k)];
-          }}
+          makeFiles={makeUploadFiles}
           />
       )}
       {waAsk && (
