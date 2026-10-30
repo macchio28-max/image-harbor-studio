@@ -60,7 +60,16 @@ function createWindow() {
     icon: path.join(__dirname, "..", "public", "icon-512.png"),
     webPreferences: { contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, "preload.cjs") },
   });
-  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    // Google sign-in popup must stay a child window so window.opener delivers the Drive token back.
+    if (url.startsWith("https://accounts.google.com/")) {
+      return { action: "allow", overrideBrowserWindowOptions: {
+        width: 520, height: 680, parent: win, autoHideMenuBar: true, backgroundColor: "#ffffff",
+        webPreferences: { contextIsolation: true, nodeIntegration: false },
+      } };
+    }
+    shell.openExternal(url); return { action: "deny" };
+  });
   mainWin = win;
   win.webContents.on("did-start-loading", () => { rendererReady = false; });
   win.on("closed", () => { if (mainWin === win) { mainWin = null; rendererReady = false; } });
@@ -127,7 +136,15 @@ ipcMain.handle("loma:isReadOnly", (_e, p) => {
 ipcMain.handle("loma:openPath", (_e, p) => shell.openPath(p));
 ipcMain.handle("loma:openExternal", (_e, u) => (/^https?:\/\//.test(u) ? shell.openExternal(u) : null));
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // Google rejects OAuth with "disallowed_useragent" when the UA contains Electron/...
+  try {
+    const ua = session.defaultSession.getUserAgent().replace(/\s?Electron\/\S+/g, "").replace(/\s?loma-viewer\/\S+/gi, "");
+    session.defaultSession.setUserAgent(ua);
+    app.userAgentFallback = ua;
+  } catch {}
+  createWindow();
+});
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
