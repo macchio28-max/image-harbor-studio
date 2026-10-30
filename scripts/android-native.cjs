@@ -332,8 +332,220 @@ public class MainActivity extends BridgeActivity {
         public void releaseFile(String id) {
             File f;
             synchronized (cached) { f = cached.remove(id); }
-            if (f != null) f.delete();
+            if (f != null && !ftpKeep.contains(id)) f.delete();
         }
+
+        @JavascriptInterface
+        public String ftpStart(int port, String user, String pass) {
+            JSONObject r = new JSONObject();
+            try {
+                ftpStopNow();
+                ftpUser = user == null ? "" : user; ftpPass = pass == null ? "" : pass;
+                java.net.ServerSocket ss = new java.net.ServerSocket();
+                ss.setReuseAddress(true);
+                ss.bind(new java.net.InetSocketAddress(port > 0 ? port : 2121));
+                ftpServer = ss;
+                Thread t = new Thread(() -> {
+                    while (!ss.isClosed()) {
+                        try { java.net.Socket s = ss.accept(); new Thread(() -> ftpSession(s)).start(); }
+                        catch (Exception e) { break; }
+                    }
+                });
+                t.setDaemon(true); t.start();
+                runOnUiThread(() -> getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON));
+                String ip = localIp();
+                ftpLogAdd("In ascolto su " + ip + ":" + ss.getLocalPort());
+                r.put("ok", true); r.put("ip", ip); r.put("port", ss.getLocalPort()); r.put("dir", ftpDir().getAbsolutePath());
+            } catch (Exception e) {
+                try { r.put("error", "Impossibile avviare il ricevitore: " + e.getMessage()); } catch (Exception ignored) {}
+            }
+            return r.toString();
+        }
+
+        @JavascriptInterface
+        public void ftpStop() { ftpStopNow(); ftpLogAdd("Ricevitore fermato"); }
+
+        @JavascriptInterface
+        public String ftpStatus() {
+            JSONObject r = new JSONObject();
+            try { r.put("running", ftpServer != null && !ftpServer.isClosed()); r.put("ip", localIp()); r.put("dir", ftpDir().getAbsolutePath()); } catch (Exception ignored) {}
+            return r.toString();
+        }
+
+        @JavascriptInterface
+        public String ftpLogs() {
+            synchronized (ftpLog) { JSONArray a = new JSONArray(); for (String s : ftpLog) a.put(s); ftpLog.clear(); return a.toString(); }
+        }
+    }
+
+    // ---------------- Native FTP receiver (camera → tablet) ----------------
+    private volatile java.net.ServerSocket ftpServer;
+    private volatile String ftpUser = "", ftpPass = "";
+    private final java.util.Set<String> ftpKeep = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+    private final List<String> ftpLog = new ArrayList<>();
+
+    private void ftpLogAdd(String m) { Log.i(TAG, "FTP " + m); synchronized (ftpLog) { ftpLog.add(m); if (ftpLog.size() > 50) ftpLog.remove(0); } }
+
+    private void ftpStopNow() {
+        try { if (ftpServer != null) ftpServer.close(); } catch (Exception ignored) {}
+        ftpServer = null;
+        runOnUiThread(() -> getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON));
+    }
+
+    @Override
+    public void onDestroy() { ftpStopNow(); super.onDestroy(); }
+
+    private File ftpDir() {
+        File base = getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES);
+        File d = new File(base != null ? base : getFilesDir(), "LoMa FTP");
+        if (!d.exists()) d.mkdirs();
+        return d;
+    }
+
+    private String localIp() {
+        String fallback = "";
+        try {
+            for (java.net.NetworkInterface ni : java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                for (java.net.InetAddress a : java.util.Collections.list(ni.getInetAddresses())) {
+                    if (!(a instanceof java.net.Inet4Address) || a.isLoopbackAddress()) continue;
+                    String n = ni.getName();
+                    if (n.startsWith("wlan") || n.startsWith("ap") || n.startsWith("swlan") || n.startsWith("eth")) return a.getHostAddress();
+                    if (fallback.isEmpty()) fallback = a.getHostAddress();
+                }
+            }
+        } catch (Exception ignored) {}
+        return fallback.isEmpty() ? "0.0.0.0" : fallback;
+    }
+
+    private String ftpSafe(String n) {
+        String s = n == null ? "" : n.replace('\\\\', '/');
+        int i = s.lastIndexOf('/'); if (i >= 0) s = s.substring(i + 1);
+        s = s.replaceAll("[<>:\\"|?*\\\\x00-\\\\x1f]", "_").trim();
+        return s.isEmpty() ? "foto_" + System.currentTimeMillis() + ".jpg" : s;
+    }
+
+    private void ftpSession(java.net.Socket sock) {
+        String peer = sock.getInetAddress().getHostAddress();
+        ftpLogAdd("Connesso: " + peer);
+        java.net.ServerSocket[] pasv = new java.net.ServerSocket[1];
+        String[] active = new String[1];
+        try (java.io.BufferedReader in = new java.io.BufferedReader(new java.io.InputStreamReader(sock.getInputStream(), "UTF-8"));
+             OutputStream os = sock.getOutputStream()) {
+            java.util.function.Consumer<String> reply = (s) -> { try { os.write((s + "\\r\\n").getBytes("UTF-8")); os.flush(); } catch (Exception ignored) {} };
+            reply.accept("220 LoMa VIEWER FTP pronto");
+            boolean authed = false; String given = ""; String cwd = "/"; String renameFrom = null;
+            String line;
+            while ((line = in.readLine()) != null) {
+                int sp = line.indexOf(' ');
+                String cmd = (sp < 0 ? line : line.substring(0, sp)).toUpperCase(java.util.Locale.ROOT).trim();
+                String arg = sp < 0 ? "" : line.substring(sp + 1);
+                if (cmd.equals("USER")) { given = arg; reply.accept("331 Password richiesta"); continue; }
+                if (cmd.equals("PASS")) {
+                    if (given.equals(ftpUser) && arg.equals(ftpPass)) { authed = true; ftpLogAdd("Accesso: " + given + "@" + peer); reply.accept("230 Accesso eseguito"); }
+                    else { ftpLogAdd("Accesso rifiutato: " + given + "@" + peer); reply.accept("530 Utente o password errati"); }
+                    continue;
+                }
+                if (cmd.equals("QUIT")) { reply.accept("221 Ciao"); break; }
+                if (cmd.equals("AUTH") || cmd.equals("PBSZ") || cmd.equals("PROT")) { reply.accept("502 TLS non supportato"); continue; }
+                if (cmd.equals("FEAT")) { reply.accept("211-Features:\\r\\n EPSV\\r\\n PASV\\r\\n SIZE\\r\\n UTF8\\r\\n211 End"); continue; }
+                if (cmd.equals("SYST")) { reply.accept("215 UNIX Type: L8"); continue; }
+                if (cmd.equals("NOOP")) { reply.accept("200 OK"); continue; }
+                if (!authed) { reply.accept("530 Accesso richiesto"); continue; }
+                switch (cmd) {
+                    case "OPTS": case "TYPE": case "MODE": case "STRU": case "ALLO": case "SITE": reply.accept("200 OK"); break;
+                    case "PWD": case "XPWD": reply.accept("257 \\"" + cwd + "\\""); break;
+                    case "CWD": case "XCWD": cwd = arg.startsWith("/") ? arg : (cwd.endsWith("/") ? cwd : cwd + "/") + arg; reply.accept("250 OK"); break;
+                    case "CDUP": cwd = "/"; reply.accept("250 OK"); break;
+                    case "MKD": case "XMKD": reply.accept("257 \\"" + arg + "\\" creata"); break;
+                    case "RMD": case "XRMD": case "REST": reply.accept(cmd.equals("REST") ? "350 OK" : "250 OK"); break;
+                    case "ABOR": reply.accept("226 OK"); break;
+                    case "PASV": case "EPSV": {
+                        if (pasv[0] != null) try { pasv[0].close(); } catch (Exception ignored) {}
+                        pasv[0] = new java.net.ServerSocket(0); pasv[0].setSoTimeout(30000); active[0] = null;
+                        int p = pasv[0].getLocalPort();
+                        if (cmd.equals("EPSV")) reply.accept("229 Entering Extended Passive Mode (|||" + p + "|)");
+                        else reply.accept("227 Entering Passive Mode (" + sock.getLocalAddress().getHostAddress().replace('.', ',') + "," + (p >> 8) + "," + (p & 255) + ")");
+                        break;
+                    }
+                    case "PORT": { String[] a = arg.split(","); active[0] = a[0] + "." + a[1] + "." + a[2] + "." + a[3] + ":" + (Integer.parseInt(a[4].trim()) * 256 + Integer.parseInt(a[5].trim())); reply.accept("200 OK"); break; }
+                    case "EPRT": { String[] a = arg.split(java.util.regex.Pattern.quote(arg.substring(0, 1))); active[0] = a[2] + ":" + a[3]; reply.accept("200 OK"); break; }
+                    case "SIZE": { File f = new File(ftpDir(), ftpSafe(arg)); reply.accept(f.exists() ? "213 " + f.length() : "550 Non trovato"); break; }
+                    case "DELE": { new File(ftpDir(), ftpSafe(arg)).delete(); reply.accept("250 OK"); break; }
+                    case "RNFR": renameFrom = ftpSafe(arg); reply.accept("350 OK"); break;
+                    case "RNTO": { if (renameFrom != null) new File(ftpDir(), renameFrom).renameTo(new File(ftpDir(), ftpSafe(arg))); reply.accept("250 OK"); break; }
+                    case "LIST": case "NLST": case "MLSD": {
+                        java.net.Socket d = ftpData(pasv, active);
+                        if (d == null) { reply.accept("425 Connessione dati non aperta"); break; }
+                        reply.accept("150 Elenco");
+                        StringBuilder sb = new StringBuilder();
+                        File[] fl = ftpDir().listFiles();
+                        if (fl != null) for (File f : fl) if (f.isFile()) sb.append(cmd.equals("NLST") ? f.getName() : cmd.equals("MLSD") ? "type=file;size=" + f.length() + "; " + f.getName() : "-rw-r--r-- 1 loma loma " + f.length() + " Jan 01 00:00 " + f.getName()).append("\\r\\n");
+                        try (OutputStream dos = d.getOutputStream()) { dos.write(sb.toString().getBytes("UTF-8")); }
+                        d.close(); reply.accept("226 Fatto"); break;
+                    }
+                    case "RETR": {
+                        File f = new File(ftpDir(), ftpSafe(arg));
+                        if (!f.exists()) { reply.accept("550 Non trovato"); break; }
+                        java.net.Socket d = ftpData(pasv, active);
+                        if (d == null) { reply.accept("425 Connessione dati non aperta"); break; }
+                        reply.accept("150 Invio");
+                        try (InputStream fi = new java.io.FileInputStream(f); OutputStream dos = d.getOutputStream()) { byte[] b = new byte[1 << 16]; int n; while ((n = fi.read(b)) > 0) dos.write(b, 0, n); }
+                        d.close(); reply.accept("226 Fatto"); break;
+                    }
+                    case "STOR": case "APPE": case "STOU": {
+                        java.net.Socket d = ftpData(pasv, active);
+                        if (d == null) { reply.accept("425 Connessione dati non aperta"); break; }
+                        String name = ftpSafe(arg);
+                        File dest = new File(ftpDir(), name);
+                        if (!cmd.equals("APPE")) {
+                            int dot = name.lastIndexOf('.'); String base = dot > 0 ? name.substring(0, dot) : name, ext = dot > 0 ? name.substring(dot) : "";
+                            int k = 1; while (dest.exists()) dest = new File(ftpDir(), base + " (" + (k++) + ")" + ext);
+                        }
+                        reply.accept("150 Ricezione");
+                        long total = 0;
+                        try (InputStream dis = d.getInputStream(); OutputStream fo = new FileOutputStream(dest, cmd.equals("APPE"))) {
+                            byte[] b = new byte[1 << 16]; int n; while ((n = dis.read(b)) > 0) { fo.write(b, 0, n); total += n; }
+                        } catch (Exception e) { reply.accept("451 " + e.getMessage()); d.close(); break; }
+                        d.close();
+                        reply.accept("226 Ricevuto");
+                        ftpLogAdd("Ricevuto: " + dest.getName());
+                        ftpDeliver(dest, total);
+                        break;
+                    }
+                    default: reply.accept("502 Comando non supportato");
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "FTP sessione", e);
+        } finally {
+            try { if (pasv[0] != null) pasv[0].close(); } catch (Exception ignored) {}
+            try { sock.close(); } catch (Exception ignored) {}
+            ftpLogAdd("Disconnesso: " + peer);
+        }
+    }
+
+    private java.net.Socket ftpData(java.net.ServerSocket[] pasv, String[] active) {
+        try {
+            if (active[0] != null) { String a = active[0]; active[0] = null; int c = a.lastIndexOf(':'); return new java.net.Socket(a.substring(0, c), Integer.parseInt(a.substring(c + 1))); }
+            if (pasv[0] != null) { java.net.ServerSocket s = pasv[0]; pasv[0] = null; java.net.Socket d = s.accept(); s.close(); return d; }
+        } catch (Exception e) { Log.e(TAG, "FTP dati", e); }
+        return null;
+    }
+
+    // Hands a received photo to the web grid through the same push/poll channel used for shared files.
+    private void ftpDeliver(File f, long size) {
+        try {
+            String id = "ftp" + (++seq);
+            String n = f.getName().toLowerCase(java.util.Locale.ROOT);
+            String mime = n.endsWith(".jpg") || n.endsWith(".jpeg") ? "image/jpeg" : n.endsWith(".png") ? "image/png" : n.endsWith(".heic") ? "image/heic" : "";
+            JSONObject o = new JSONObject();
+            o.put("id", id); o.put("name", f.getName()); o.put("type", mime); o.put("size", size); o.put("path", f.getAbsolutePath()); o.put("ftp", true);
+            ftpKeep.add(id);
+            synchronized (cached) { cached.put(id, f); }
+            synchronized (readyFiles) { readyFiles.add(o); }
+            pushToJs();
+        } catch (Exception e) { Log.e(TAG, "FTP consegna", e); }
     }
 }
 `);
