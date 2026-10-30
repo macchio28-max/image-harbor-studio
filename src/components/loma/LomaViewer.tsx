@@ -484,7 +484,7 @@ export function LomaViewer() {
           await cache.delete(r);
         }
         window.history.replaceState(null, "", "/");
-        if (files.length === 1 && files[0] && !viaFtp) await openRef.current(files[0]);
+        if (files.length === 1 && files[0]) await openRef.current(files[0]);
         else if (files.length > 1) {
           const dt = new DataTransfer();
           files.forEach((f) => dt.items.add(f));
