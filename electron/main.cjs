@@ -384,3 +384,31 @@ ipcMain.handle("loma:shareFile", (_e, src, name) => {
     return { ok: true };
   } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
 });
+
+// ---------------- FTP (camera receiver + NAS client) ----------------
+const ftp = require("./ftp.cjs");
+let ftpSrv = null, ftpCfg = null;
+ipcMain.handle("loma:ftpIPs", () => ftp.localIPs());
+ipcMain.handle("loma:ftpDefaultDir", () => path.join(app.getPath("pictures"), "LoMa FTP"));
+ipcMain.handle("loma:ftpStatus", () => (ftpSrv ? { running: true, ...ftpCfg, ips: ftp.localIPs() } : { running: false }));
+ipcMain.handle("loma:ftpStart", async (_e, cfg) => {
+  if (ftpSrv) { try { ftpSrv.close(); } catch {} ftpSrv = null; }
+  const send = (ch, v) => { try { mainWin && mainWin.webContents.send(ch, v); } catch {} };
+  try {
+    ftpSrv = await ftp.createServer({
+      port: Number(cfg.port) || 2121, user: cfg.user, pass: cfg.pass, dir: cfg.dir,
+      onLog: (m) => send("loma:ftpLog", m),
+      onFile: (p) => { try { send("loma:ftpFile", { name: path.basename(p), path: p, bytes: new Uint8Array(fs.readFileSync(p)) }); } catch {} },
+    });
+    ftpCfg = { port: Number(cfg.port) || 2121, user: cfg.user, dir: cfg.dir };
+    return { ok: true, ips: ftp.localIPs() };
+  } catch (e) {
+    ftpSrv = null;
+    return { ok: false, error: e && e.code === "EADDRINUSE" ? `La porta ${cfg.port} è già in uso` : String(e && e.message || e) };
+  }
+});
+ipcMain.handle("loma:ftpStop", () => { if (ftpSrv) { try { ftpSrv.close(); } catch {} } ftpSrv = null; return true; });
+ipcMain.handle("loma:ftpTest", (_e, p) => ftp.test(p));
+ipcMain.handle("loma:ftpList", (_e, p) => ftp.list(p));
+ipcMain.handle("loma:ftpDownload", (_e, p, name) => ftp.download(p, name));
+ipcMain.handle("loma:ftpUpload", (_e, p, name, bytes) => ftp.upload(p, name, bytes));
