@@ -432,7 +432,7 @@ public class MainActivity extends BridgeActivity {
         String[] active = new String[1];
         try (java.io.BufferedReader in = new java.io.BufferedReader(new java.io.InputStreamReader(sock.getInputStream(), "UTF-8"));
              OutputStream os = sock.getOutputStream()) {
-            java.util.function.Consumer<String> reply = (s) -> { try { os.write((s + "\\r\\n").getBytes("UTF-8")); os.flush(); } catch (Exception ignored) {} };
+            FtpReply reply = new FtpReply(os);
             reply.accept("220 LoMa VIEWER FTP pronto");
             boolean authed = false; String given = ""; String cwd = "/"; String renameFrom = null;
             String line;
@@ -523,6 +523,12 @@ public class MainActivity extends BridgeActivity {
             try { sock.close(); } catch (Exception ignored) {}
             ftpLogAdd("Disconnesso: " + peer);
         }
+    }
+
+    private static class FtpReply {
+        private final OutputStream os;
+        FtpReply(OutputStream os) { this.os = os; }
+        void accept(String s) { try { os.write((s + "\\r\\n").getBytes("UTF-8")); os.flush(); } catch (Exception ignored) {} }
     }
 
     private java.net.Socket ftpData(java.net.ServerSocket[] pasv, String[] active) {
