@@ -6,7 +6,7 @@ import {
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
   FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, Repeat, LayoutGrid, Square, Printer, Share2,
 } from "lucide-react";
-import { ChevronLeft, ChevronRight, Undo2, Redo2, MoreHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight, Undo2, Redo2, MoreHorizontal, Server } from "lucide-react";
 import { type History, startHistory, commit, undo, redo } from "./edit-history";
 import { toast as sonnerToast } from "sonner";
 import { ConvertDialog } from "./ConvertDialog";
@@ -403,7 +403,7 @@ export function LomaViewer() {
   };
 
   // Desktop: photos opened from Finder/Explorer (double-click or "Apri con").
-  const makeUploadFiles = async (k) => {
+  const makeUploadFiles = async (k: "developed" | "original" | "clean"): Promise<File[]> => {
             const sel = multiFiles();
             if (sel.length > 1) {
               const out: File[] = [];
