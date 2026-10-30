@@ -23,6 +23,7 @@ import { DevelopPanel } from "./DevelopPanel";
 import { Filmstrip } from "./Filmstrip";
 import { ComparePane } from "./ComparePane";
 import { MailChoice, WEBMAIL_PRESETS, serviceOf, type MailAccount } from "./MailChoice";
+import { CloudHub } from "./CloudHub";
 import { ContactSheet } from "./ContactSheet";
 import { ProvenancePanel } from "./ProvenancePanel";
 import { type CullItem, type CullFilter, IMAGE_RE, readCull, readCullTags, applyFilter } from "./culling";
@@ -67,6 +68,7 @@ export function LomaViewer() {
   const [printSrc, setPrintSrc] = useState<string | null>(null);
   const [waAsk, setWaAsk] = useState(false);
   const [mailAsk, setMailAsk] = useState(false);
+  const [cloudHub, setCloudHub] = useState<null | "upload" | "import">(null);
   const [hist, setHist] = useState<Uint32Array[] | null>(null);
   const preview = useRef<HTMLCanvasElement>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -1127,6 +1129,7 @@ export function LomaViewer() {
         <Group last>
           {touch ? (
             <>
+            <Tool icon={<Cloud className="text-primary" />} label="Hub" tip="Cloud Hub" onClick={() => setCloudHub("upload")} />
             <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => openAI("Google Drive", "https://drive.google.com/", "com.google.android.apps.docs")} />
             <Tool icon={<B.OneDriveIcon />} label="OneDrv" tip="OneDrive" onClick={() => openAI("OneDrive", "https://onedrive.live.com/", "com.microsoft.skydrive")} />
             <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => (img ? sharePhoto() : notify("Apri prima un'immagine da condividere."))} />
@@ -1135,7 +1138,8 @@ export function LomaViewer() {
             </>
           ) : (
             <>
-            <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
+            <Tool icon={<Cloud className="text-primary" />} label="Hub" tip="Cloud Hub: carica / importa nelle cartelle Drive" onClick={() => setCloudHub("upload")} />
+            <Tool icon={<B.DriveIcon />} label="Drive" tip="Copia rapida nella cartella Drive del computer" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
             <Tool icon={<B.OneDriveIcon />} label="OneDrv" tip="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
             <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => uploadCloud("iCloud Drive", "https://www.icloud.com/iclouddrive/")} />
             <Tool icon={<B.MailIcon />} label="Mail" onClick={() => mail()} />
@@ -1239,6 +1243,7 @@ export function LomaViewer() {
               </button>
               <div className="mt-3 flex gap-2">
                 <button onClick={() => folderInput.current?.click()} className="rounded-lg bg-secondary px-4 py-2 text-sm hover:bg-accent">Importa Scheda / Cartella</button>
+                <button onClick={() => setCloudHub("import")} className="rounded-lg bg-secondary px-4 py-2 text-sm hover:bg-accent">Importa da Cloud</button>
                 <button onClick={() => multiInput.current?.click()} className="rounded-lg bg-secondary px-4 py-2 text-sm hover:bg-accent">Apri Multipli</button>
               </div>
             </div>
@@ -1443,6 +1448,17 @@ export function LomaViewer() {
       {printSrc && <PrintDialog src={printSrc} onClose={() => { URL.revokeObjectURL(printSrc); setPrintSrc(null); }} />}
       {topazOpen && <TopazSettings onClose={() => setTopazOpen(false)} />}
       {mailAsk && <MailChoice onClose={() => setMailAsk(false)} onPick={(a) => { setMailAsk(false); mail(a); }} />}
+      {cloudHub && (
+        <CloudHub mode={cloudHub} onClose={() => setCloudHub(null)} hasImage={!!img}
+          onQuickDesktop={desk ? () => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive") : undefined}
+          onImport={(fs) => { const dt = new DataTransfer(); fs.forEach((f) => dt.items.add(f)); importRef.current(dt.files); }}
+          makeFile={async (k) => {
+            if (k === "original") return img!.file;
+            const jpg = k === "developed";
+            const b = await renderClean(imgEl.current!, adjust, crop, jpg ? "image/jpeg" : "image/png");
+            return new File([b], `${baseName(img!.file.name)}${jpg ? "_sviluppata.jpg" : "_pulita.png"}`, { type: b.type });
+          }} />
+      )}
       {waAsk && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 p-4" onClick={() => setWaAsk(false)}>
           <div className="w-full max-w-sm rounded-lg border border-border bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
