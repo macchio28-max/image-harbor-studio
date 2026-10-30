@@ -305,6 +305,18 @@ export function LomaViewer() {
   const swipe = useRef<{ x: number; y: number } | null>(null);
   const fitScale = useRef(1);
   const visible = applyFilter(session, filter);
+  const [multi, setMulti] = useState<Set<string>>(new Set());
+  const anchorRef = useRef<string | null>(null);
+  const selectGrid = (id: string, how: "toggle" | "range" | "only") => {
+    setMulti((prev) => {
+      if (how === "only") { anchorRef.current = id; return new Set([id]); }
+      if (how === "toggle") { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); anchorRef.current = id; return n; }
+      const ids = visible.map((v) => v.id);
+      const a = ids.indexOf(anchorRef.current ?? curId ?? id), b = ids.indexOf(id);
+      if (a < 0 || b < 0) return new Set([id]);
+      return new Set([...prev, ...ids.slice(Math.min(a, b), Math.max(a, b) + 1)]);
+    });
+  };
 
   // The non-active pane reports its own zoom/pan so swapping keeps both views exactly as left.
   const paneView = (v: { scale: number; off: { x: number; y: number } }) => setOther((o) => (o ? { ...o, ...v } : o));
@@ -1334,7 +1346,8 @@ export function LomaViewer() {
             <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md bg-popover px-4 py-2 text-sm shadow-xl">{toast}</div>
           )}
           {view === "grid" && session.length > 0 && (
-            <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} hideLock={mob} filter={filter} setFilter={setFilter} total={session.length} />
+            <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} hideLock={mob} filter={filter} setFilter={setFilter} total={session.length}
+              selected={multi} onSelect={selectGrid} onClearSel={() => setMulti(new Set())} onSelectAll={(ids) => setMulti(new Set(ids))} />
           )}
         </main>
         {compare && active === "A" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="B" onActivate={swapActive} view={other?.img ? { scale: other.scale, off: other.off } : null} onView={paneView} />}
@@ -1449,10 +1462,26 @@ export function LomaViewer() {
       {topazOpen && <TopazSettings onClose={() => setTopazOpen(false)} />}
       {mailAsk && <MailChoice onClose={() => setMailAsk(false)} onPick={(a) => { setMailAsk(false); mail(a); }} />}
       {cloudHub && (
-        <CloudHub mode={cloudHub} onClose={() => setCloudHub(null)} hasImage={!!img}
+        <CloudHub mode={cloudHub} onClose={() => setCloudHub(null)} hasImage={!!img || multiFiles().length > 0} count={multiFiles().length > 1 ? multiFiles().length : 1}
           onQuickDesktop={typeof window !== "undefined" && (window as any).lomaDesktop ? () => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive") : undefined}
           onImport={(fs) => { const dt = new DataTransfer(); fs.forEach((f) => dt.items.add(f)); importRef.current(dt.files); }}
-          makeFile={async (k) => {
+          makeFiles={async (k) => {
+            const sel = multiFiles();
+            if (sel.length > 1) {
+              const out: File[] = [];
+              for (const it of sel) {
+                if (it.id === curId && img) { out.push(await currentFile(k)); continue; }
+                if (k === "original") { out.push(it.file); continue; }
+                const jpg = k === "developed";
+                let b = await convertFile(it.file, { fmt: jpg ? "jpeg" : "png", quality: 92, scale: 1, keepMeta: false, alpha: !jpg, lossless: false } as any);
+                if (!jpg) b = await stripBlob(b);
+                out.push(new File([b], `${baseName(it.file.name)}${jpg ? "_sviluppata.jpg" : "_pulita.png"}`, { type: b.type }));
+              }
+              return out;
+            }
+            return [await currentFile(k)];
+          }}
+          currentFileUnused={async (k: "developed" | "original" | "clean") => {
             if (k === "original") return img!.file;
             const jpg = k === "developed";
             const b = await renderClean(imgEl.current!, adjust, crop, jpg ? "image/jpeg" : "image/png");

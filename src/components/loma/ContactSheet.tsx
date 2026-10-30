@@ -17,9 +17,10 @@ type Props = {
   selected: Set<string>;
   onSelect: (id: string, how: "toggle" | "range" | "only") => void;
   onClearSel: () => void;
+  onSelectAll: (ids: string[]) => void;
 };
 
-export function ContactSheet({ items, current, size, setSize, onPick, onOpen, hideLock, filter, setFilter, total, selected, onSelect, onClearSel }: Props) {
+export function ContactSheet({ items, current, size, setSize, onPick, onOpen, hideLock, filter, setFilter, total, selected, onSelect, onClearSel, onSelectAll }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const chip = (a: boolean) => `rounded px-2 py-0.5 text-xs whitespace-nowrap ${a ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-accent"}`;
   const imgH = Math.round(size * 0.68);
@@ -45,7 +46,7 @@ export function ContactSheet({ items, current, size, setSize, onPick, onOpen, hi
           <button key={n} className={chip(filter.minStars === n)} onClick={() => setFilter({ ...filter, minStars: n })}>{n === 0 ? "★ tutte" : `≥ ${n}★`}</button>
         ))}
         {selected.size > 1 && <><span className="mx-1 h-4 w-px bg-border" /><span className="whitespace-nowrap text-primary">{selected.size} selezionate</span><button className={chip(false)} onClick={onClearSel}>Deseleziona</button></>}
-        <button className={chip(false)} onClick={() => items.forEach((i) => onSelect(i.id, "toggle-on" as any))}>Seleziona tutte</button>
+        <button className={chip(false)} onClick={() => onSelectAll(items.map((i) => i.id))}>Seleziona tutte</button>
         <span className="ml-auto">Dimensione</span>
         <input type="range" min={100} max={320} value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-32 accent-primary" />
       </div>
