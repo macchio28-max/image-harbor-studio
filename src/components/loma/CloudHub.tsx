@@ -57,7 +57,8 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFiles, count = 
       for (let i = 0; i < fs.length; i++) { const f = fs[i]!; await svcUpload(prof, f, f.name, (p) => setBusy((i + p) / fs.length)); }
       const fn = await svcFolderName(prof).catch(() => prof.name);
       setBusy(null);
-      toast.success(fs.length > 1 ? `${fs.length} foto caricate con successo in ${fn}` : `Caricato con successo in ${fn}`, { duration: 3000 });
+      const verb = prof.service === "local" ? "salvat" : "caricat";
+      toast.success(fs.length > 1 ? `${fs.length} foto ${verb}e in ${fn}` : `${verb === "salvat" ? "Salvato" : "Caricato"} con successo in ${fn}`, { duration: 3000 });
       onClose();
     } catch (e) { fail(e); }
   };
@@ -90,9 +91,9 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFiles, count = 
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
           <Cloud className="h-5 w-5 text-primary" />
           <h2 className="flex-1 text-base font-semibold">Cloud Hub</h2>
-          {signed && <span className="text-xs text-primary">{svc === "onedrive" ? "OneDrive" : "Drive"} collegato</span>}
-          {signed && <button title={`Esci da ${svcLabel(svc)}`} onClick={() => { svcSignOut(svc); setSigned(false); }} className="rounded p-2 text-muted-foreground hover:bg-accent"><LogOut className="h-4 w-4" /></button>}
-          {!signed && (desktop || svc === "onedrive") && <button onClick={async () => { try { await svcToken(svc); setSigned(true); toast.success(`Collegato a ${svc === "onedrive" ? "OneDrive" : "Google Drive"}`, { duration: 1000 }); } catch (e) { fail(e); } }} className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground">Accedi a {svcLabel(svc)}</button>}
+          {svc !== "local" && signed && <span className="text-xs text-primary">{svc === "onedrive" ? "OneDrive" : "Drive"} collegato</span>}
+          {svc !== "local" && signed && <button title={`Esci da ${svcLabel(svc)}`} onClick={() => { svcSignOut(svc); setSigned(false); }} className="rounded p-2 text-muted-foreground hover:bg-accent"><LogOut className="h-4 w-4" /></button>}
+          {svc !== "local" && !signed && (desktop || svc === "onedrive") && <button onClick={async () => { try { await svcToken(svc); setSigned(true); toast.success(`Collegato a ${svc === "onedrive" ? "OneDrive" : "Google Drive"}`, { duration: 1000 }); } catch (e) { fail(e); } }} className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground">Accedi a {svcLabel(svc)}</button>}
           {<button title="Impostazioni" onClick={() => setSettings((s) => !s)} className="rounded p-2 text-muted-foreground hover:bg-accent"><Settings className="h-4 w-4" /></button>}
           <button aria-label="Chiudi" onClick={onClose} className="rounded p-2 text-muted-foreground hover:bg-accent"><X className="h-4 w-4" /></button>
         </div>
@@ -149,7 +150,13 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFiles, count = 
                 <select value={edit.service} onChange={(e) => setEdit({ ...edit, service: e.target.value as CloudProfile["service"] })} className={`${inp} mb-2`}>
                   {CLOUD_SERVICES.map((s) => <option key={s.id} value={s.id} disabled={!s.ready}>{s.name}</option>)}
                 </select>
-                <input value={edit.folder} onChange={(e) => setEdit({ ...edit, folder: e.target.value })} placeholder={edit.service === "onedrive" ? "Link condivisione OneDrive, percorso (/Foto/Lavorati) o ID" : "Link cartella Drive o ID"} className={`${inp} mb-2`} />
+                {edit.service === "local" ? (
+                  <div className="mb-2 flex gap-2">
+                    <div className={`${inp} min-w-0 flex-1 truncate ${edit.folder ? "" : "text-muted-foreground"}`}>{edit.folder || "Nessuna cartella scelta"}</div>
+                    <button onClick={async () => { const d = await (window as any).lomaDesktop?.pickFolder?.("Scegli la cartella", edit.folder); if (d) setEdit({ ...edit, folder: d, name: edit.name || d.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "" }); }}
+                      className="shrink-0 rounded bg-secondary px-3 py-2 text-sm hover:bg-accent">Sfoglia cartella…</button>
+                  </div>
+                ) : <input value={edit.folder} onChange={(e) => setEdit({ ...edit, folder: e.target.value })} placeholder={edit.service === "onedrive" ? "Link condivisione OneDrive, percorso (/Foto/Lavorati) o ID" : "Link cartella Drive o ID"} className={`${inp} mb-2`} />}
                 <div className="flex gap-2">
                   <button disabled={!edit.name.trim() || !svcParse(edit.service, edit.folder)} onClick={saveEdit} className="flex-1 rounded bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50">Salva profilo</button>
                   {list.length > 0 && <button onClick={() => setEdit(null)} className="rounded bg-secondary px-3 py-2 text-sm">Annulla</button>}
@@ -173,9 +180,9 @@ export function CloudHub({ mode: initial, onClose, hasImage, makeFiles, count = 
                 ))}
               </div>
               <button disabled={!prof || !hasImage || busy !== null} onClick={upload} className="flex w-full items-center justify-center gap-2 rounded bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50">
-                <Upload className="h-4 w-4" /> {hasImage ? `Carica ${count > 1 ? `${count} foto ` : ""}in ${prof?.name ?? "…"}` : "Apri prima un'immagine"}
+                <Upload className="h-4 w-4" /> {hasImage ? `${svc === "local" ? "Salva" : "Carica"} ${count > 1 ? `${count} foto ` : ""}in ${prof?.name ?? "…"}` : "Apri prima un'immagine"}
               </button>
-              {onQuickDesktop && hasImage && (
+              {onQuickDesktop && hasImage && svc !== "local" && (
                 <button onClick={() => { onClose(); onQuickDesktop(); }} className="mt-2 flex w-full items-center justify-center gap-2 rounded bg-secondary px-3 py-2 text-sm hover:bg-accent">
                   <HardDrive className="h-4 w-4" /> Copia rapida nella cartella Drive del computer
                 </button>

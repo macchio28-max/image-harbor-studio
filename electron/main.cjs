@@ -295,6 +295,19 @@ ipcMain.handle("loma:saveToFolder", (_e, dir, name, src) => {
     return { ok: true, path: dest };
   } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
 });
+const LIST_RE = /\.(dng|cr2|cr3|nef|arw|rw2|orf|raf|tiff?|psd|psb|heic|heif|jpe?g|png|webp|avif|gif|bmp)$/i;
+ipcMain.handle("loma:listFolder", (_e, dir) => {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true })
+      .filter((d) => d.isFile() && LIST_RE.test(d.name) && !d.name.startsWith("."))
+      .map((d) => ({ name: d.name, size: fs.statSync(path.join(dir, d.name)).size }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch (e) { throw new Error("Cartella non accessibile: " + (e && e.message || e)); }
+});
+ipcMain.handle("loma:readFolderFile", (_e, dir, name) => {
+  const f = path.join(dir, path.basename(name));
+  return new Uint8Array(fs.readFileSync(f));
+});
 ipcMain.handle("loma:showInFolder", (_e, p) => shell.showItemInFolder(p));
 
 ipcMain.handle("loma:copyImage", (_e, bytes) => {

@@ -33,5 +33,7 @@ contextBridge.exposeInMainWorld("lomaDesktop", {
   getMsToken: (cid) => ipcRenderer.invoke("loma:getMsToken", cid),
   hasMsToken: () => ipcRenderer.invoke("loma:hasMsToken"),
   signOutMs: () => ipcRenderer.invoke("loma:signOutMs"),
+  listFolder: (dir) => ipcRenderer.invoke("loma:listFolder", dir),
+  readFolderFile: (dir, name) => ipcRenderer.invoke("loma:readFolderFile", dir, name),
   showInFolder: (p) => ipcRenderer.invoke("loma:showInFolder", p),
 });
