@@ -185,6 +185,60 @@ ipcMain.handle("loma:signOutGoogle", async () => {
   if (v) try { await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(v)}`, { method: "POST" }); } catch {}
   return true;
 });
+// ---- OneDrive OAuth (Microsoft public client, PKCE + loopback; Client ID comes from the app settings) ----
+const msFile = () => path.join(app.getPath("userData"), "onedrive_token.json");
+const readMs = () => { try { return JSON.parse(fs.readFileSync(msFile(), "utf8")); } catch { return null; } };
+const MS_AUTH = "https://login.microsoftonline.com/common/oauth2/v2.0";
+const MS_SCOPE = "Files.ReadWrite.All offline_access";
+async function msTokenReq(cid, params) {
+  const r = await fetch(`${MS_AUTH}/token`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: cid, scope: MS_SCOPE, ...params }).toString() });
+  const j = await r.json();
+  if (!r.ok || !j.access_token) throw new Error(j.error_description || j.error || `Microsoft [${r.status}]`);
+  const t = { cid, access_token: j.access_token, refresh_token: j.refresh_token || params.refresh_token, expires_at: Date.now() + Number(j.expires_in || 3600) * 1000 };
+  fs.writeFileSync(msFile(), JSON.stringify(t));
+  return t;
+}
+let msLoginP = null;
+function msLoopback(cid) {
+  msLoginP ??= new Promise((res, rej) => {
+    const http = require("http"), crypto = require("crypto");
+    const b64u = (b) => b.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const verifier = b64u(crypto.randomBytes(32));
+    const challenge = b64u(crypto.createHash("sha256").update(verifier).digest());
+    let redirect = "";
+    const srv = http.createServer(async (req, rsp) => {
+      const u = new globalThis.URL(req.url, "http://localhost");
+      const code = u.searchParams.get("code"), err = u.searchParams.get("error");
+      if (!code && !err) { rsp.writeHead(404); return rsp.end(); }
+      rsp.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      rsp.end(err ? `<meta charset="utf-8"><p>Accesso annullato: ${err}</p>` : OK_HTML);
+      srv.close(); clearTimeout(to);
+      const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.show(); w.focus(); }
+      if (err) return rej(new Error(u.searchParams.get("error_description") || "Accesso annullato"));
+      try { res(await msTokenReq(cid, { code, grant_type: "authorization_code", redirect_uri: redirect, code_verifier: verifier })); } catch (e) { rej(e); }
+    });
+    const to = setTimeout(() => { srv.close(); rej(new Error("Tempo scaduto per l'accesso Microsoft")); }, 5 * 60 * 1000);
+    srv.listen(0, "127.0.0.1", () => {
+      redirect = `http://localhost:${srv.address().port}`;
+      const q = new URLSearchParams({ client_id: cid, redirect_uri: redirect, response_type: "code", scope: MS_SCOPE,
+        code_challenge: challenge, code_challenge_method: "S256", prompt: "select_account" });
+      shell.openExternal(`${MS_AUTH}/authorize?${q}`);
+    });
+  }).finally(() => { msLoginP = null; });
+  return msLoginP;
+}
+ipcMain.handle("loma:getMsToken", async (_e, cid) => {
+  if (!cid) throw new Error("Microsoft Client ID mancante");
+  let t = readMs();
+  if (t && t.cid !== cid) { try { fs.unlinkSync(msFile()); } catch {} t = null; }
+  if (t?.access_token && t.expires_at - Date.now() > 60000) return t.access_token;
+  if (t?.refresh_token) { try { return (await msTokenReq(cid, { refresh_token: t.refresh_token, grant_type: "refresh_token" })).access_token; } catch {} }
+  if (t) { try { fs.unlinkSync(msFile()); } catch {} }
+  return (await msLoopback(cid)).access_token;
+});
+ipcMain.handle("loma:hasMsToken", () => { const t = readMs(); return !!(t && (t.refresh_token || t.expires_at > Date.now())); });
+ipcMain.handle("loma:signOutMs", () => { try { fs.unlinkSync(msFile()); } catch {} return true; });
 ipcMain.handle("loma:openExternal", (_e, u) => (/^https?:\/\//.test(u) ? shell.openExternal(u) : null));
 
 app.whenReady().then(() => {
