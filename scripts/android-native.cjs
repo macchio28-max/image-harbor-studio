@@ -17,6 +17,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Parcelable;
 import android.provider.OpenableColumns;
+import android.provider.DocumentsContract;
 import android.util.Base64;
 import android.util.Log;
 import android.webkit.WebView;
@@ -55,6 +56,54 @@ public class MainActivity extends BridgeActivity {
     }
 
     private static final String TAG = "LomaAndroid";
+    private static final int FTP_FOLDER_REQUEST = 4701;
+    private static final String FTP_TREE_URI = "loma_ftp_tree_uri";
+    private static final String FTP_TREE_DISPLAY = "loma_ftp_tree_display";
+
+    private android.content.SharedPreferences ftpPrefs() {
+        return getSharedPreferences("loma_ftp", MODE_PRIVATE);
+    }
+
+    private void folderPicked(String display, String error) {
+        runOnUiThread(() -> getBridge().getWebView().evaluateJavascript(
+            "window.__lomaOnFolderPicked && window.__lomaOnFolderPicked(" + JSONObject.quote(display) + "," + JSONObject.quote(error) + ")", null));
+    }
+
+    private String folderDisplay(Uri tree) {
+        String id = DocumentsContract.getTreeDocumentId(tree);
+        int colon = id.indexOf(':');
+        if (colon >= 0) return (id.substring(0, colon).equalsIgnoreCase("primary") ? "Memoria interna" : "Scheda SD")
+            + (id.length() > colon + 1 ? " / " + id.substring(colon + 1) : "");
+        return nameOf(DocumentsContract.buildDocumentUriUsingTree(tree, id));
+    }
+
+    private String ftpDisplayDir() {
+        return ftpPrefs().getString(FTP_TREE_URI, "").isEmpty()
+            ? "Memoria interna / Immagini / LoMa FTP" : ftpPrefs().getString(FTP_TREE_DISPLAY, "Cartella selezionata");
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != FTP_FOLDER_REQUEST || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri tree = data.getData();
+        try {
+            int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            if ((flags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) throw new java.io.IOException("La cartella non consente la scrittura");
+            getContentResolver().takePersistableUriPermission(tree, flags);
+            String display = folderDisplay(tree);
+            String old = ftpPrefs().getString(FTP_TREE_URI, "");
+            if (!ftpPrefs().edit().putString(FTP_TREE_URI, tree.toString()).putString(FTP_TREE_DISPLAY, display).commit())
+                throw new java.io.IOException("Impossibile memorizzare la cartella");
+            if (!old.isEmpty() && !old.equals(tree.toString())) releaseTree(old);
+            folderPicked(display, "");
+        } catch (Exception e) { folderPicked("", "Cartella non selezionata: " + e.getMessage()); }
+    }
+
+    private void releaseTree(String tree) {
+        try { getContentResolver().releasePersistableUriPermission(Uri.parse(tree), Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION); }
+        catch (Exception ignored) {}
+    }
 
     // Pushes pending files to window.__lomaReceiveSharedFiles (cold start + onNewIntent); polling still works.
     private void pushToJs() {
@@ -336,6 +385,29 @@ public class MainActivity extends BridgeActivity {
         }
 
         @JavascriptInterface
+        public void pickFolder() {
+            runOnUiThread(() -> {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+                    String saved = ftpPrefs().getString(FTP_TREE_URI, "");
+                    if (android.os.Build.VERSION.SDK_INT >= 26 && !saved.isEmpty()) intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, Uri.parse(saved));
+                    startActivityForResult(intent, FTP_FOLDER_REQUEST);
+                } catch (Exception e) { folderPicked("", "Impossibile aprire il selettore: " + e.getMessage()); }
+            });
+        }
+
+        @JavascriptInterface
+        public void resetFolder() {
+            String old = ftpPrefs().getString(FTP_TREE_URI, "");
+            if (ftpPrefs().edit().remove(FTP_TREE_URI).remove(FTP_TREE_DISPLAY).commit()) {
+                if (!old.isEmpty()) releaseTree(old);
+                folderPicked(ftpDisplayDir(), "");
+            } else folderPicked("", "Impossibile ripristinare la cartella");
+        }
+
+        @JavascriptInterface
         public String ftpStart(int port, String user, String pass) {
             JSONObject r = new JSONObject();
             try {
@@ -355,7 +427,7 @@ public class MainActivity extends BridgeActivity {
                 runOnUiThread(() -> getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON));
                 String ip = localIp();
                 ftpLogAdd("In ascolto su " + ip + ":" + ss.getLocalPort());
-                r.put("ok", true); r.put("ip", ip); r.put("port", ss.getLocalPort()); r.put("dir", ftpDir().getAbsolutePath());
+                r.put("ok", true); r.put("ip", ip); r.put("port", ss.getLocalPort()); r.put("dir", ftpDisplayDir());
             } catch (Exception e) {
                 try { r.put("error", "Impossibile avviare il ricevitore: " + e.getMessage()); } catch (Exception ignored) {}
             }
@@ -368,7 +440,7 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public String ftpStatus() {
             JSONObject r = new JSONObject();
-            try { r.put("running", ftpServer != null && !ftpServer.isClosed()); r.put("ip", localIp()); r.put("dir", ftpDir().getAbsolutePath()); } catch (Exception ignored) {}
+            try { r.put("running", ftpServer != null && !ftpServer.isClosed()); r.put("ip", localIp()); r.put("dir", ftpDisplayDir()); } catch (Exception ignored) {}
             return r.toString();
         }
 
@@ -416,6 +488,84 @@ public class MainActivity extends BridgeActivity {
             }
         } catch (Exception ignored) {}
         return fallback.isEmpty() ? "0.0.0.0" : fallback;
+    }
+
+    private String ftpMime(String name) {
+        String ext = name.substring(name.lastIndexOf('.') + 1).toLowerCase(java.util.Locale.ROOT);
+        String mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+        return mime != null ? mime : "application/octet-stream";
+    }
+
+    private String numberedName(String name, int number) {
+        if (number == 0) return name;
+        int dot = name.lastIndexOf('.');
+        return (dot > 0 ? name.substring(0, dot) : name) + " (" + number + ")" + (dot > 0 ? name.substring(dot) : "");
+    }
+
+    private class FtpDestination {
+        Uri uri; File file; String name; boolean saf;
+        OutputStream open() throws Exception {
+            OutputStream out = uri != null ? getContentResolver().openOutputStream(uri, "w") : new FileOutputStream(file);
+            if (out == null) throw new java.io.IOException("Impossibile scrivere nella cartella scelta");
+            return out;
+        }
+        void finish() throws Exception {
+            if (uri != null && !saf && android.os.Build.VERSION.SDK_INT >= 29) {
+                android.content.ContentValues values = new android.content.ContentValues();
+                values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0);
+                if (getContentResolver().update(uri, values, null, null) != 1) throw new java.io.IOException("Salvataggio non completato");
+            } else if (file != null) android.media.MediaScannerConnection.scanFile(MainActivity.this,
+                new String[]{file.getAbsolutePath()}, new String[]{ftpMime(name)}, null);
+        }
+        void abort() {
+            try {
+                if (saf && uri != null) DocumentsContract.deleteDocument(getContentResolver(), uri);
+                else if (uri != null) getContentResolver().delete(uri, null, null);
+                else if (file != null) file.delete();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    // Reserve the name atomically across concurrent camera sessions; never fall back silently from an inaccessible SD card.
+    private synchronized FtpDestination ftpDestination(String requested) throws Exception {
+        FtpDestination dest = new FtpDestination();
+        String saved = ftpPrefs().getString(FTP_TREE_URI, "");
+        java.util.Set<String> names = new java.util.HashSet<>();
+        if (!saved.isEmpty()) {
+            Uri tree = Uri.parse(saved);
+            String id = DocumentsContract.getTreeDocumentId(tree);
+            Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, id);
+            try (Cursor c = getContentResolver().query(children, new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null)) {
+                if (c == null) throw new java.io.IOException("Cartella non accessibile: selezionala di nuovo");
+                while (c.moveToNext()) names.add(c.getString(0));
+            }
+            int k = 0; do { dest.name = numberedName(requested, k++); } while (names.contains(dest.name));
+            dest.saf = true;
+            dest.uri = DocumentsContract.createDocument(getContentResolver(), DocumentsContract.buildDocumentUriUsingTree(tree, id), ftpMime(dest.name), dest.name);
+            if (dest.uri == null) throw new java.io.IOException("Impossibile creare il file nella cartella scelta");
+        } else if (android.os.Build.VERSION.SDK_INT >= 29) {
+            Uri collection = android.provider.MediaStore.Files.getContentUri("external");
+            String relative = android.os.Environment.DIRECTORY_PICTURES + "/LoMa FTP/";
+            try (Cursor c = getContentResolver().query(collection, new String[]{android.provider.MediaStore.MediaColumns.DISPLAY_NAME},
+                android.provider.MediaStore.MediaColumns.RELATIVE_PATH + "=?", new String[]{relative}, null)) {
+                if (c == null) throw new java.io.IOException("Impossibile leggere la cartella Immagini");
+                while (c.moveToNext()) names.add(c.getString(0));
+            }
+            int k = 0; do { dest.name = numberedName(requested, k++); } while (names.contains(dest.name));
+            android.content.ContentValues values = new android.content.ContentValues();
+            values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, dest.name);
+            values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, ftpMime(dest.name));
+            values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, relative);
+            values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1);
+            dest.uri = getContentResolver().insert(collection, values);
+            if (dest.uri == null) throw new java.io.IOException("Impossibile salvare in Immagini");
+        } else {
+            File dir = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "LoMa FTP");
+            if (!dir.isDirectory() && !dir.mkdirs()) throw new java.io.IOException("Impossibile creare la cartella Immagini");
+            int k = 0;
+            do { dest.name = numberedName(requested, k++); dest.file = new File(dir, dest.name); } while (!dest.file.createNewFile());
+        }
+        return dest;
     }
 
     private String ftpSafe(String n) {
@@ -496,21 +646,27 @@ public class MainActivity extends BridgeActivity {
                     case "STOR": case "APPE": case "STOU": {
                         java.net.Socket d = ftpData(pasv, active);
                         if (d == null) { reply.accept("425 Connessione dati non aperta"); break; }
-                        String name = ftpSafe(arg);
-                        File dest = new File(ftpDir(), name);
-                        if (!cmd.equals("APPE")) {
-                            int dot = name.lastIndexOf('.'); String base = dot > 0 ? name.substring(0, dot) : name, ext = dot > 0 ? name.substring(dot) : "";
-                            int k = 1; while (dest.exists()) dest = new File(ftpDir(), base + " (" + (k++) + ")" + ext);
-                        }
-                        reply.accept("150 Ricezione");
+                        FtpDestination dest = null;
+                        File temp = null;
                         long total = 0;
-                        try (InputStream dis = d.getInputStream(); OutputStream fo = new FileOutputStream(dest, cmd.equals("APPE"))) {
-                            byte[] b = new byte[1 << 16]; int n; while ((n = dis.read(b)) > 0) { fo.write(b, 0, n); total += n; }
-                        } catch (Exception e) { reply.accept("451 " + e.getMessage()); d.close(); break; }
-                        d.close();
-                        reply.accept("226 Ricevuto");
-                        ftpLogAdd("Ricevuto: " + dest.getName());
-                        ftpDeliver(dest, total);
+                        try {
+                            dest = ftpDestination(ftpSafe(arg));
+                            temp = File.createTempFile("ftp_", ".tmp", cacheDir());
+                            try (InputStream dis = d.getInputStream(); OutputStream fo = dest.open(); OutputStream cachedOut = new FileOutputStream(temp)) {
+                                reply.accept("150 Ricezione");
+                                byte[] b = new byte[1 << 16]; int n;
+                                while ((n = dis.read(b)) > 0) { fo.write(b, 0, n); cachedOut.write(b, 0, n); total += n; }
+                            }
+                            dest.finish();
+                            reply.accept("226 Ricevuto");
+                            ftpLogAdd("Ricevuto: " + dest.name + " → " + ftpDisplayDir());
+                            ftpDeliver(temp, total, dest.name);
+                        } catch (Exception e) {
+                            if (dest != null) dest.abort();
+                            if (temp != null) temp.delete();
+                            ftpLogAdd("Salvataggio fallito: " + e.getMessage());
+                            reply.accept("451 Salvataggio fallito: " + e.getMessage());
+                        } finally { d.close(); }
                         break;
                     }
                     default: reply.accept("502 Comando non supportato");
@@ -540,14 +696,13 @@ public class MainActivity extends BridgeActivity {
     }
 
     // Hands a received photo to the web grid through the same push/poll channel used for shared files.
-    private void ftpDeliver(File f, long size) {
+    private void ftpDeliver(File f, long size, String displayName) {
         try {
             String id = "ftp" + (++seq);
-            String n = f.getName().toLowerCase(java.util.Locale.ROOT);
+            String n = displayName.toLowerCase(java.util.Locale.ROOT);
             String mime = n.endsWith(".jpg") || n.endsWith(".jpeg") ? "image/jpeg" : n.endsWith(".png") ? "image/png" : n.endsWith(".heic") ? "image/heic" : "";
             JSONObject o = new JSONObject();
-            o.put("id", id); o.put("name", f.getName()); o.put("type", mime); o.put("size", size); o.put("path", f.getAbsolutePath()); o.put("ftp", true);
-            ftpKeep.add(id);
+            o.put("id", id); o.put("name", displayName); o.put("type", mime); o.put("size", size); o.put("path", f.getAbsolutePath()); o.put("ftp", true);
             synchronized (cached) { cached.put(id, f); }
             synchronized (readyFiles) { readyFiles.add(o); }
             pushToJs();
