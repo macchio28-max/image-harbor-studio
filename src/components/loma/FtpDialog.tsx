@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Server, X, Play, Square, Plus, Trash2, Pencil, Check, Download, Upload, Radio, FlaskConical } from "lucide-react";
+import { Server, X, Play, Square, Plus, Trash2, Pencil, Check, Download, Upload, Radio, FlaskConical, RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import type { UploadKind } from "./CloudHub";
 
@@ -62,6 +63,13 @@ export function FtpDialog({ onClose, onReceived, onImport, hasImage, count, make
   const [adir, setAdir] = useState("");
   useEffect(() => {
     if (env !== "android") return;
+    const win = window as typeof window & { __lomaOnFolderPicked?: (displayPath: string, error?: string) => void };
+    const previous = win.__lomaOnFolderPicked;
+    const onPicked = (displayPath: string, error?: string) => {
+      if (error) toast.error(error, { duration: 8000 });
+      else if (displayPath) setAdir(displayPath);
+    };
+    win.__lomaOnFolderPicked = onPicked;
     const poll = () => {
       try {
         const st = JSON.parse(A.ftpStatus?.() || "{}");
@@ -74,7 +82,13 @@ export function FtpDialog({ onClose, onReceived, onImport, hasImage, count, make
     };
     poll();
     const t = window.setInterval(poll, 1500);
-    return () => window.clearInterval(t);
+    return () => {
+      window.clearInterval(t);
+      if (win.__lomaOnFolderPicked === onPicked) {
+        if (previous) win.__lomaOnFolderPicked = previous;
+        else delete win.__lomaOnFolderPicked;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [env]);
   useEffect(() => { setFiles(null); setPicked(new Set()); }, [sel]);
@@ -109,8 +123,9 @@ export function FtpDialog({ onClose, onReceived, onImport, hasImage, count, make
     const chosen = (files ?? []).filter((f) => picked.has(f.name));
     try {
       const out: File[] = [];
-      for (let i = 0; i < chosen.length; i++) { setBusy(i / chosen.length); const b: Uint8Array = await D.download(prof, chosen[i]!.name); out.push(new File([b as BlobPart], chosen[i]!.name)); }
-      setBusy(null); onImport(out); onClose(); toast.success(`${out.length} foto importate da ${prof!.name}`, { duration: 2000 });
+      if (!prof) return;
+      for (const [i, file] of chosen.entries()) { setBusy(i / chosen.length); const b: Uint8Array = await D.download(prof, file.name); out.push(new File([b as BlobPart], file.name)); }
+      setBusy(null); onImport(out); onClose(); toast.success(`${out.length} foto importate da ${prof.name}`, { duration: 2000 });
     } catch (e) { fail(e); }
   };
   const doUpload = async () => {
@@ -118,7 +133,7 @@ export function FtpDialog({ onClose, onReceived, onImport, hasImage, count, make
     try {
       setBusy(0);
       const fs = await makeFiles(kind);
-      for (let i = 0; i < fs.length; i++) { setBusy(i / fs.length); await D.upload(prof, fs[i]!.name, fs[i]!); }
+      for (const [i, file] of fs.entries()) { setBusy(i / fs.length); await D.upload(prof, file.name, file); }
       setBusy(null); toast.success(fs.length > 1 ? `${fs.length} foto caricate su ${prof.name}` : `Caricato con successo su ${prof.name}`, { duration: 3000 }); onClose();
     } catch (e) { fail(e); }
   };
@@ -203,13 +218,27 @@ export function FtpDialog({ onClose, onReceived, onImport, hasImage, count, make
                       <input value={rx.user} onChange={(e) => updRx({ ...rx, user: e.target.value.trim() })} className={inp} />
                       <input value={rx.pass} onChange={(e) => updRx({ ...rx, pass: e.target.value.trim() })} className={inp} />
                     </div>
-                    {env === "desktop" && <div className="flex gap-2">
-                      <div className={`${inp} min-w-0 flex-1 truncate`}>{rx.dir}</div>
-                      <button onClick={async () => { const d = await (window as any).lomaDesktop.pickFolder("Cartella foto ricevute", rx.dir); if (d) updRx({ ...rx, dir: d }); }} className="shrink-0 rounded bg-secondary px-3 py-2 text-sm hover:bg-accent">Sfoglia…</button>
-                    </div>}
                   </div>
                 </details>
               )}
+              {env !== "web" && <div className="space-y-1.5">
+                <div className="text-xs text-muted-foreground">Cartella di destinazione</div>
+                <div className="flex items-start gap-2">
+                  <div aria-label="Cartella di destinazione" className={`${inp} min-w-0 flex-1 break-words`}>{env === "android" ? adir || "—" : rx.dir}</div>
+                  <Button variant="secondary" disabled={running} onClick={async () => {
+                    try {
+                      if (env === "android") A.pickFolder();
+                      else { const dir = await (window as any).lomaDesktop.pickFolder("Cartella foto ricevute", rx.dir); if (dir) updRx({ ...rx, dir }); }
+                    } catch (e) { fail(e); }
+                  }}>Sfoglia…</Button>
+                  <Button variant="ghost" size="icon" disabled={running} aria-label="Ripristina cartella predefinita" title="Ripristina cartella predefinita" onClick={async () => {
+                    try {
+                      if (env === "android") { A.resetFolder(); const status = JSON.parse(A.ftpStatus() || "{}"); if (status.dir) setAdir(status.dir); }
+                      else { const dir = await D.defaultDir(); updRx({ ...rx, dir }); }
+                    } catch (e) { fail(e); }
+                  }}><RotateCcw /></Button>
+                </div>
+              </div>}
               {env !== "web" && (running
                 ? <button onClick={stop} className="flex w-full items-center justify-center gap-2 rounded bg-destructive px-3 py-2.5 text-sm font-medium text-destructive-foreground"><Square className="h-4 w-4" /> Ferma ricevitore</button>
                 : <button disabled={!rx.user || !rx.pass} onClick={start} className="flex w-full items-center justify-center gap-2 rounded bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50"><Play className="h-4 w-4" /> Avvia ricevitore</button>)}
