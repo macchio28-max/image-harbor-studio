@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ImagePlus, Type, Shapes, Eye, EyeOff, ArrowUp, ArrowDown, Trash2, Copy, Undo2, Redo2, Download, Check, Bold, Italic } from 'lucide-react';
+import { ImagePlus, Type, Shapes, Eye, EyeOff, ArrowUp, ArrowDown, Trash2, Copy, Undo2, Redo2, Download, Check, Bold, Italic, FlipHorizontal2, FlipVertical2, RotateCw, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -136,6 +136,12 @@ export function CompositionDialog({ open, onClose, seedFiles, onComplete }: {
               <Button size="icon" variant="ghost" title="Porta sotto" aria-label="Porta sotto" onClick={() => reorder(-1)} disabled={doc.layers[0]?.id === selected}><ArrowDown /></Button>
               <Button size="icon" variant="ghost" title="Duplica livello" aria-label="Duplica livello" onClick={() => { const l = { ...active, id: crypto.randomUUID(), name: `${active.name} copia`, x: active.x + 20, y: active.y + 20 }; change({ ...doc, layers: [...doc.layers, l] }); select(l.id); }}><Copy /></Button>
               <Button size="icon" variant="ghost" title="Elimina livello" aria-label="Elimina livello" onClick={() => { change({ ...doc, layers: doc.layers.filter(l => l.id !== selected) }); select(null); }}><Trash2 /></Button>
+            </div>
+            <div className="flex gap-1">
+              <Button size="icon" variant={active.flipH ? 'secondary' : 'ghost'} title="Specchia orizzontalmente" aria-label="Specchia orizzontalmente" aria-pressed={active.flipH} onClick={() => patch({ flipH: !active.flipH })}><FlipHorizontal2 /></Button>
+              <Button size="icon" variant={active.flipV ? 'secondary' : 'ghost'} title="Capovolgi verticalmente" aria-label="Capovolgi verticalmente" aria-pressed={active.flipV} onClick={() => patch({ flipV: !active.flipV })}><FlipVertical2 /></Button>
+              <Button size="icon" variant="ghost" title="Ruota 90° a sinistra" aria-label="Ruota 90° a sinistra" onClick={() => patch({ rotation: ((active.rotation - 90) % 360 + 360) % 360 - 180 })}><RotateCcw /></Button>
+              <Button size="icon" variant="ghost" title="Ruota 90° a destra" aria-label="Ruota 90° a destra" onClick={() => patch({ rotation: ((active.rotation + 90) % 360 + 360) % 360 - 180 })}><RotateCw /></Button>
             </div>
             <label className="block text-xs">Fusione<select aria-label="Fusione" className="sel mt-1" value={active.blend} onChange={e => patch({ blend: e.target.value as Blend })}>{BLENDS.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
             {number('Opacità %', active.opacity, v => patch({ opacity: v }), 0, 100)}
