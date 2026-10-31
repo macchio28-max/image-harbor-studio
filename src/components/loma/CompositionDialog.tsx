@@ -16,6 +16,8 @@ export function CompositionDialog({ open, onClose, seedFiles, onComplete }: {
   const doc = history.present;
   const [selected, select] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
+  const frame = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const assets = useRef(new Map<string, ImageBitmap>());
@@ -52,6 +54,13 @@ export function CompositionDialog({ open, onClose, seedFiles, onComplete }: {
     setBusy(true);
     void seedFiles().then(files => addPhotos(files, true)).catch(() => { setBusy(false); toast.error('Impossibile aprire le foto selezionate.'); });
   }, [open]); // Initial seed only; edits survive dialog closing.
+  useEffect(() => {
+    const el = frame.current; if (!open || !el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setPreviewSize({ width: Math.max(1, entry.contentRect.width - 16), height: Math.max(1, entry.contentRect.height - 16) });
+    });
+    observer.observe(el); return () => observer.disconnect();
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const id = requestAnimationFrame(() => { if (canvas.current) paintComposition(canvas.current, doc, assets.current, 1400); });
@@ -92,8 +101,8 @@ export function CompositionDialog({ open, onClose, seedFiles, onComplete }: {
         <span className="ml-auto text-xs text-muted-foreground">{doc.width} × {doc.height} · {busy ? 'Elaborazione…' : `${doc.layers.length} livelli`}</span>
       </div>
       <div className="grid min-h-0 flex-1 grid-rows-[minmax(140px,1fr)_minmax(140px,1fr)] gap-3 md:grid-cols-[minmax(0,1fr)_280px] md:grid-rows-1">
-        <div className="flex min-h-0 min-w-0 items-center justify-center overflow-hidden bg-canvas p-2">
-          <canvas ref={canvas} aria-label="Anteprima composizione" className="max-h-full max-w-full touch-none object-contain" onPointerDown={e => {
+        <div ref={frame} className="flex min-h-0 min-w-0 items-center justify-center overflow-hidden bg-canvas p-2">
+          <canvas ref={canvas} aria-label="Anteprima composizione" className="max-h-full max-w-full touch-none object-contain" style={{ width: doc.width * Math.min(previewSize.width / doc.width, previewSize.height / doc.height), height: doc.height * Math.min(previewSize.width / doc.width, previewSize.height / doc.height) }} onPointerDown={e => {
             if (!active || busy) return;
             e.currentTarget.setPointerCapture(e.pointerId);
             dragging.current = { x: e.clientX, y: e.clientY, layer: active, doc };
