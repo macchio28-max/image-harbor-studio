@@ -5,6 +5,7 @@ import {
   ChevronUp, ChevronDown,
 } from "lucide-react";
 import { type Adjust, defaultAdjust, monotoneSpline, WB_PRESETS, type WbMode, type Tone } from "./develop";
+import { UserPresets } from "./UserPresets";
 
 type SetA = (f: (a: Adjust) => Adjust) => void;
 type AreaId = "crop" | "exp" | "color" | "fx";
@@ -181,6 +182,7 @@ export function DevelopPanel(props: {
           </div>
         )}
       </div>
+      <UserPresets adjust={a} onApply={(next) => setAdjust(() => next)} disabled={!props.hasImage} />
       <button onClick={props.onResetAll} className="m-2 rounded-md border border-border py-1.5 text-xs hover:bg-accent">Ripristina tutte le regolazioni</button>
     </>
   );

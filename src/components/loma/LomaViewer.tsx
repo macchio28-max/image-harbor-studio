@@ -6,7 +6,8 @@ import {
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
   FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, Repeat, LayoutGrid, Square, Printer, Share2,
 } from "lucide-react";
-import { ChevronLeft, ChevronRight, Undo2, Redo2, MoreHorizontal, Server } from "lucide-react";
+import { ChevronLeft, ChevronRight, Undo2, Redo2, MoreHorizontal, Server, Layers } from "lucide-react";
+import { CompositionDialog } from "./CompositionDialog";
 import { type History, startHistory, commit, undo, redo } from "./edit-history";
 import { toast as sonnerToast } from "sonner";
 import { ConvertDialog } from "./ConvertDialog";
@@ -68,6 +69,7 @@ export function LomaViewer() {
   const [imgReady, setImgReady] = useState(0);
   const [topazOpen, setTopazOpen] = useState(false);
   const [convOpen, setConvOpen] = useState(false);
+  const [compositionOpen, setCompositionOpen] = useState(false);
   const [printSrc, setPrintSrc] = useState<string | null>(null);
   const [waAsk, setWaAsk] = useState(false);
   const [mailAsk, setMailAsk] = useState(false);
@@ -628,6 +630,7 @@ export function LomaViewer() {
   // keyboard culling
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e) => {
+    if (compositionOpen) return;
     const t = e.target as HTMLElement;
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && (k === "z" || k === "y") && !t?.closest?.("textarea,[contenteditable],input[type=text]")) {
@@ -1169,6 +1172,7 @@ export function LomaViewer() {
           </div>
           <Tool icon={<Columns2 />} label="A / B" tip="Confronta due foto" active={compare} onClick={() => setCompare((c) => !c)} />
           <Tool icon={<SlidersHorizontal className="text-primary" />} label="Sviluppo" tip="Pannello strumenti di sviluppo" active={toolsOpen} onClick={() => setToolsOpen((o) => !o)} />
+          <Tool icon={<Layers className="text-primary" />} label="Livelli" tip="Compositore di foto, testo e forme" active={compositionOpen} onClick={() => setCompositionOpen(true)} />
           <Tool icon={<Camera />} label="Cattura" tip="Screenshot a risoluzione nativa" onClick={screenshot} />
           <Tool icon={<Eraser className="text-chart-3" />} label="Pulisci" tip="Rimuovi tutti i metadati" onClick={deepClean} />
           <div className={canUndo ? "" : "pointer-events-none opacity-40"}><Tool icon={<Undo2 />} label="Annulla" tip="Annulla ultima modifica (Ctrl/⌘+Z)" onClick={() => travel(-1)} /></div>
@@ -1516,6 +1520,19 @@ export function LomaViewer() {
         type="file" multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }}
       />
       {convOpen && <ConvertDialog current={img?.file ?? null} preview={img?.url ?? null} size={img ? { w: img.w, h: img.h } : null} session={session} visible={visible} onClose={() => setConvOpen(false)} />}
+      <CompositionDialog open={compositionOpen} onClose={() => setCompositionOpen(false)}
+        seedFiles={async () => {
+          if (multiFiles().length > 1) return makeUploadFiles("clean");
+          const source = imgEl.current;
+          if (!img || !source || !source.complete || !source.naturalWidth) return [];
+          const blob = await renderClean(source, adjust, crop, "image/png");
+          return [new File([blob], `${baseName(img.file.name)}.png`, { type: "image/png" })];
+        }}
+        onComplete={(file) => {
+          const id = `composition-${Date.now()}`;
+          setSession(s => [...s, { id, file, thumb: null, rating: 0, locked: false, flagged: false }]);
+          setCurId(id); setMulti(new Set([id])); setView("loupe"); setCompositionOpen(false); void openFile(file);
+        }} />
       {printSrc && <PrintDialog src={printSrc} onClose={() => { URL.revokeObjectURL(printSrc); setPrintSrc(null); }} />}
       {topazOpen && <TopazSettings onClose={() => setTopazOpen(false)} />}
       {mailAsk && <MailChoice onClose={() => setMailAsk(false)} onPick={(a) => { setMailAsk(false); mail(a); }} />}

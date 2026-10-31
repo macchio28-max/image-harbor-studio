@@ -9,6 +9,8 @@
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
 - Offline support uses vite-plugin-pwa (generateSW) registered only via src/lib/register-sw.ts, which refuses dev/preview hosts — prevents stale preview caches.
+- Composition uses a separate session-retained canvas document and native Canvas blend operations, preview capped to 1400px and full-resolution PNG export; flattened results append to the viewer session so existing save/share/clean paths remain unchanged.
+- User development presets are versioned and validated in localStorage, excluding geometry/crop so quick application preserves each photo's framing and works offline on every platform.
 - Desktop cache clearing (Electron `loma:clearCache`) may delete only exported-photo temp files and Chromium's volatile network cache; never call clearStorageData on serviceworkers/cachestorage — the offline copy of the app lives there and must survive a clean-up pressed while offline.
 - Google Drive direct API lives only in Cloud Hub (browser GIS token, Client ID in localStorage, no server) so it works in web, desktop and static APK; the Drive quick button still copies into the desktop sync folder.
 
