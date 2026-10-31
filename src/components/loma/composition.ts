@@ -11,13 +11,14 @@ export type Layer = {
   x: number; y: number; width: number; height: number; scale: number; rotation: number;
   opacity: number; blend: Blend; visible: boolean; text: string; font: string; fontSize: number;
   bold: boolean; italic: boolean; color: string; shape: 'rectangle' | 'ellipse' | 'line';
+  flipH: boolean; flipV: boolean;
 };
 export type Composition = { width: number; height: number; layers: Layer[] };
 export function newLayer(kind: Layer['kind'], width: number, height: number): Layer {
   return { id: crypto.randomUUID(), name: kind === 'text' ? 'Testo' : kind === 'shape' ? 'Forma' : 'Foto', kind,
     x: width / 2, y: height / 2, width: width * .4, height: height * .2, scale: 1, rotation: 0,
     opacity: 100, blend: 'source-over', visible: true, text: 'Testo', font: 'Arial', fontSize: Math.max(16, Math.round(width / 15)),
-    bold: false, italic: false, color: '#ffffff', shape: 'rectangle' };
+    bold: false, italic: false, color: '#ffffff', shape: 'rectangle', flipH: false, flipV: false };
 }
 export function paintComposition(canvas: HTMLCanvasElement, doc: Composition, assets: Map<string, CanvasImageSource>, maxSide?: number) {
   const k = maxSide ? Math.min(1, maxSide / Math.max(doc.width, doc.height)) : 1;
@@ -27,7 +28,7 @@ export function paintComposition(canvas: HTMLCanvasElement, doc: Composition, as
   for (const l of doc.layers) {
     if (!l.visible) continue;
     ctx.save(); ctx.globalAlpha = l.opacity / 100; ctx.globalCompositeOperation = l.blend;
-    ctx.translate(l.x, l.y); ctx.rotate(l.rotation * Math.PI / 180); ctx.scale(l.scale, l.scale);
+    ctx.translate(l.x, l.y); ctx.rotate(l.rotation * Math.PI / 180); ctx.scale(l.scale * (l.flipH ? -1 : 1), l.scale * (l.flipV ? -1 : 1));
     ctx.fillStyle = l.color; ctx.strokeStyle = l.color;
     if (l.kind === 'photo') { const img = l.asset ? assets.get(l.asset) : null; if (img) ctx.drawImage(img, -l.width / 2, -l.height / 2, l.width, l.height); }
     else if (l.kind === 'text') {

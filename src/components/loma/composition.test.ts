@@ -20,6 +20,13 @@ describe('composizione locale', () => {
     expect(ctx.drawImage).toHaveBeenCalledExactlyOnceWith(source, -40, -20, 80, 40);
     expect(ctx.globalAlpha).toBe(.5); expect(ctx.globalCompositeOperation).toBe('multiply');
   });
+  it('specchia e capovolge il livello con scala negativa', () => {
+    const ctx = { scale: vi.fn(), translate: vi.fn(), rotate: vi.fn(), save: vi.fn(), restore: vi.fn(), drawImage: vi.fn(), globalAlpha: 1, globalCompositeOperation: 'source-over' };
+    const canvas = { width: 0, height: 0, getContext: () => ctx } as unknown as HTMLCanvasElement;
+    const l = { ...newLayer('photo', 800, 600), asset: 'p', scale: .5, flipH: true, flipV: true };
+    paintComposition(canvas, { width: 800, height: 600, layers: [l] }, new Map([['p', {} as CanvasImageSource]]));
+    expect(ctx.scale).toHaveBeenLastCalledWith(-.5, -.5);
+  });
   it('riduce solo l’anteprima, mai le dimensioni dell’esportazione', () => {
     const ctx = { scale: vi.fn() };
     const canvas = { width: 0, height: 0, getContext: () => ctx } as unknown as HTMLCanvasElement;
