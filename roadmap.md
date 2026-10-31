@@ -1,3 +1,8 @@
+- [ ] White track / blue thumb scrollbars across platforms.
+- [ ] Local photo/text/shape compositor with transforms, blend modes and flattened PNG export to viewer.
+- [ ] Persistent development presets and favorites, quick application without changing crop.
+- [ ] Verify composition and presets in tests and desktop/mobile browser.
+- [ ] Provide Mac terminal packaging commands; no intermediate APK download.
 - [x] Add Android persistent native FTP folder selection and reset.
 - [x] Save FTP photos to SAF destinations or public Pictures, retaining temporary grid copies.
 - [x] Verify dialog selection/reset (5 tests and browser simulation), generated Java compilation against Android 35 APIs, and native duplicate naming.
