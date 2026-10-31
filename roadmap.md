@@ -1,0 +1,3 @@
+- [ ] Add Android persistent native FTP folder selection and reset.
+- [ ] Save FTP photos to SAF destinations or public Pictures, retaining temporary grid copies.
+- [ ] Update FTP dialog and verify native logic and folder-selection flow.
