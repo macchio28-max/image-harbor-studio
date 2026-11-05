@@ -20,6 +20,37 @@ export async function androidShare(file: File, pkg?: string): Promise<boolean> {
   return (await upload(a, f, f.name, f.type || "image/jpeg")) ? !!(pkg && a.shareCommitTo ? a.shareCommitTo(upId, pkg) : a.shareCommit(upId)) : false;
 }
 
+async function toShareable(file: File): Promise<File> {
+  if (/^image\/(jpeg|png|webp|gif)$/.test(file.type)) return file;
+  try {
+    const { decodeSource } = await import("./convert");
+    const bm = await decodeSource(file);
+    const c = document.createElement("canvas"); c.width = bm.width; c.height = bm.height;
+    c.getContext("2d")!.drawImage(bm, 0, 0); bm.close();
+    const b = await new Promise<Blob>((r, j) => c.toBlob((x) => (x ? r(x) : j(new Error("jpeg"))), "image/jpeg", 0.92));
+    return new File([b], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch { return file; }
+}
+
+/** Shares many files in one go: native ACTION_SEND_MULTIPLE on the APK, navigator.share({files}) elsewhere. */
+export async function androidShareMultiple(files: File[], pkg?: string): Promise<boolean> {
+  const a = (window as any).LomaAndroid;
+  if (a?.shareBegin && a.shareCommitMulti) {
+    const ids: string[] = [];
+    for (const f0 of files) {
+      const f = await toShareable(f0);
+      if (await upload(a, f, f.name, f.type || "image/jpeg")) ids.push(upId);
+    }
+    return ids.length ? !!a.shareCommitMulti(ids.join(","), pkg || "") : false;
+  }
+  if (a?.shareBegin) return false; // old APK without multi bridge
+  if (navigator.canShare?.({ files })) {
+    try { await navigator.share({ files, title: `${files.length} foto` }); } catch { /* annullato */ }
+    return true;
+  }
+  return false;
+}
+
 let upId = "";
 async function upload(a: any, b: Blob, name: string, mime: string): Promise<boolean> {
   const id: string = a.shareBegin(name, mime);
