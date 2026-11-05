@@ -216,6 +216,12 @@ public class MainActivity extends BridgeActivity {
     private final java.util.HashMap<String, File> cached = new java.util.HashMap<>();
     private final java.util.HashMap<String, File> outgoing = new java.util.HashMap<>();
     private final java.util.HashMap<String, String> outMime = new java.util.HashMap<>();
+    private final java.util.HashMap<String, java.io.OutputStream> outStreams = new java.util.HashMap<>();
+    private static volatile long lastShareSweep = 0;
+    private void closeOut(String id) {
+        java.io.OutputStream os; synchronized (outgoing) { os = outStreams.remove(id); }
+        if (os != null) try { os.close(); } catch (Exception e) { Log.e(TAG, "closeOut", e); }
+    }
 
     private String nameOf(Uri u) {
         if ("content".equals(u.getScheme())) {
@@ -272,29 +278,34 @@ public class MainActivity extends BridgeActivity {
             try {
                 File d = new File(getCacheDir(), "share_out");
                 d.mkdirs();
-                File[] old = d.listFiles();
-                if (old != null) for (File x : old) if (System.currentTimeMillis() - x.lastModified() > 3600000) x.delete();
+                long now = System.currentTimeMillis();
+                if (now - lastShareSweep > 600000) {
+                    lastShareSweep = now;
+                    final File dd = d;
+                    new Thread(() -> { File[] old = dd.listFiles(); if (old != null) for (File x : old) if (System.currentTimeMillis() - x.lastModified() > 3600000) x.delete(); }).start();
+                }
                 String safe = (name == null ? "foto.jpg" : name).replaceAll("[^A-Za-z0-9._-]", "_");
                 File f = new File(d, System.currentTimeMillis() + "_" + safe);
                 f.createNewFile();
                 String id = "s" + (++seq);
-                synchronized (outgoing) { outgoing.put(id, f); outMime.put(id, mime == null ? "image/*" : mime); }
+                java.io.OutputStream os = new java.io.BufferedOutputStream(new FileOutputStream(f), 1 << 20);
+                synchronized (outgoing) { outgoing.put(id, f); outMime.put(id, mime == null ? "image/*" : mime); outStreams.put(id, os); }
                 return id;
             } catch (Exception e) { Log.e(TAG, "shareBegin", e); return ""; }
         }
 
         @JavascriptInterface
         public boolean shareChunk(String id, String b64) {
-            File f; synchronized (outgoing) { f = outgoing.get(id); }
-            if (f == null) return false;
-            try (FileOutputStream os = new FileOutputStream(f, true)) { os.write(Base64.decode(b64, Base64.DEFAULT)); return true; }
+            java.io.OutputStream os; synchronized (outgoing) { os = outStreams.get(id); }
+            if (os == null) return false;
+            try { os.write(Base64.decode(b64, Base64.DEFAULT)); return true; }
             catch (Exception e) { Log.e(TAG, "shareChunk", e); return false; }
         }
 
         @JavascriptInterface
         public boolean shareCommit(String id) {
             File f; String mime;
-            synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
+            closeOut(id); synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
             if (f == null) return false;
             try {
                 Uri uri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", f);
@@ -315,7 +326,7 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public boolean shareCommitTo(String id, String pkg) {
             File f; String mime;
-            synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
+            closeOut(id); synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
             if (f == null) return false;
             try {
                 Uri uri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", f);
@@ -348,7 +359,7 @@ public class MainActivity extends BridgeActivity {
                 for (String id : (idsCsv == null ? "" : idsCsv).split(",")) {
                     if (id.isEmpty()) continue;
                     File f; String mime;
-                    synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
+                    closeOut(id); synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
                     if (f == null) continue;
                     Uri uri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", f);
                     uris.add(uri);
@@ -382,7 +393,7 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public boolean saveCommit(String id, String name) {
             File f; String mime;
-            synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
+            closeOut(id); synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
             if (f == null) return false;
             String display = (name == null || name.isEmpty()) ? f.getName() : name;
             try {
