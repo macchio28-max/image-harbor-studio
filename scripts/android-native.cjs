@@ -338,6 +338,46 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception e) { Log.e(TAG, "shareCommitTo", e); return false; }
         }
 
+        // Sends several uploaded files at once (ACTION_SEND_MULTIPLE + ClipData); pkg optional, chooser fallback.
+        @JavascriptInterface
+        public boolean shareCommitMulti(String idsCsv, String pkg) {
+            java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
+            ClipData clip = null;
+            String common = null;
+            try {
+                for (String id : (idsCsv == null ? "" : idsCsv).split(",")) {
+                    if (id.isEmpty()) continue;
+                    File f; String mime;
+                    synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
+                    if (f == null) continue;
+                    Uri uri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", f);
+                    uris.add(uri);
+                    if (clip == null) clip = ClipData.newRawUri(f.getName(), uri); else clip.addItem(new ClipData.Item(uri));
+                    if (mime == null) mime = "image/*";
+                    if (common == null) common = mime;
+                    else if (!common.equals(mime)) common = (common.startsWith("image/") && mime.startsWith("image/")) ? "image/*" : "*/*";
+                }
+                if (uris.isEmpty()) return false;
+                Intent send = new Intent(uris.size() == 1 ? Intent.ACTION_SEND : Intent.ACTION_SEND_MULTIPLE);
+                send.setType(common);
+                if (uris.size() == 1) send.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+                else send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+                send.setClipData(clip);
+                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                final Intent fs = send;
+                runOnUiThread(() -> {
+                    if (pkg != null && !pkg.isEmpty()) {
+                        try { startActivity(new Intent(fs).setPackage(pkg)); return; } catch (Exception e) { Log.i(TAG, pkg + " non installata, apro il menu"); }
+                    }
+                    Intent ch = Intent.createChooser(fs, "Condividi foto");
+                    ch.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                    try { startActivity(ch); } catch (Exception e2) { Log.e(TAG, "chooser", e2); }
+                });
+                Log.i(TAG, "condivisione multipla avviata: " + uris.size() + " file");
+                return true;
+            } catch (Exception e) { Log.e(TAG, "shareCommitMulti", e); return false; }
+        }
+
         // Copies an uploaded file into Pictures/LoMa (MediaStore on Android 10+, MediaScanner before) so it shows in Galleria.
         @JavascriptInterface
         public boolean saveCommit(String id, String name) {

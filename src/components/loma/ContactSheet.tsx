@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useRef } from "react";
-import { Flag, Lock, Star, ImageOff, Check } from "lucide-react";
+import { Flag, Lock, Star, ImageOff, Check, Share2, Download } from "lucide-react";
 import type { CullFilter, CullItem } from "./culling";
 
 type Props = {
@@ -18,9 +18,11 @@ type Props = {
   onSelect: (id: string, how: "toggle" | "range" | "only") => void;
   onClearSel: () => void;
   onSelectAll: (ids: string[]) => void;
+  onShareSel?: () => void;
+  onSaveSel?: () => void;
 };
 
-export function ContactSheet({ items, current, size, setSize, onPick, onOpen, hideLock, filter, setFilter, total, selected, onSelect, onClearSel, onSelectAll }: Props) {
+export function ContactSheet({ items, current, size, setSize, onPick, onOpen, hideLock, filter, setFilter, total, selected, onSelect, onClearSel, onSelectAll, onShareSel, onSaveSel }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const chip = (a: boolean) => `rounded px-2 py-0.5 text-xs whitespace-nowrap ${a ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-accent"}`;
   const imgH = Math.round(size * 0.68);
@@ -45,7 +47,7 @@ export function ContactSheet({ items, current, size, setSize, onPick, onOpen, hi
         {[0, 1, 2, 3, 4, 5].map((n) => (
           <button key={n} className={chip(filter.minStars === n)} onClick={() => setFilter({ ...filter, minStars: n })}>{n === 0 ? "★ tutte" : `≥ ${n}★`}</button>
         ))}
-        {selected.size > 1 && <><span className="mx-1 h-4 w-px bg-border" /><span className="whitespace-nowrap text-primary">{selected.size} selezionate</span><button className={chip(false)} onClick={onClearSel}>Deseleziona</button></>}
+        {selected.size > 1 && <><span className="mx-1 h-4 w-px bg-border" /><span className="whitespace-nowrap text-primary">{selected.size} selezionate</span><button className={chip(false)} onClick={onClearSel}>Deseleziona</button>{onShareSel && <button className={chip(true)} onClick={onShareSel}><Share2 className="mr-1 inline h-3 w-3" />Condividi {selected.size}</button>}{onSaveSel && <button className={chip(true)} onClick={onSaveSel}><Download className="mr-1 inline h-3 w-3" />Salva {selected.size}</button>}</>}
         <button className={chip(false)} onClick={() => onSelectAll(items.map((i) => i.id))}>Seleziona tutte</button>
         <span className="ml-auto">Dimensione</span>
         <input type="range" min={100} max={320} value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-32 accent-primary" />
