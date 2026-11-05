@@ -740,7 +740,7 @@ export function LomaViewer() {
   const groupFiles = (): File[] | null => { const m = multiFiles(); return m.length > 1 ? m.map((s) => s.file) : null; };
   const shareGroup = async (pkg?: string): Promise<boolean> => {
     const files = groupFiles(); if (!files) return false;
-    const t = sonnerToast.loading(`Preparo ${files.length} foto…`);
+    const t = sonnerToast.loading(`Apro condivisione di ${files.length} foto…`);
     try {
       if (await androidShareMultiple(files, pkg)) { sonnerToast.dismiss(t); return true; }
       files.forEach((f, i) => setTimeout(() => download(f, f.name), i * 250));
@@ -956,6 +956,8 @@ export function LomaViewer() {
   const share = async (target: string, fallback?: string) => {
     if (await shareGroup()) return;
     if (img && imgEl.current) {
+      const t = sonnerToast.loading("Apro condivisione…");
+      setTimeout(() => sonnerToast.dismiss(t), 2500);
       const b = await renderClean(imgEl.current, adjust, crop, "image/png");
       const f = new File([b], `${baseName(img.file.name)}.png`, { type: "image/png" });
       if (await androidShare(f)) return;
@@ -986,6 +988,8 @@ export function LomaViewer() {
   const sharePhoto = async () => {
     if (await shareGroup()) return;
     if (!img || !imgEl.current) return;
+    const t = sonnerToast.loading("Apro condivisione…");
+    setTimeout(() => sonnerToast.dismiss(t), 2500);
     try {
       let f: File;
       if (!isEdited() && !RAWLIKE.test(img.file.name)) f = img.file; // instant: original, no re-render
