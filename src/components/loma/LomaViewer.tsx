@@ -1,4 +1,4 @@
-import { androidShare } from "./android-share";
+import { androidShare, androidShareMultiple, androidSave } from "./android-share";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Save, MousePointer2, Hand, ZoomIn, ZoomOut, Columns2, SlidersHorizontal, Camera, Eraser,
@@ -736,7 +736,43 @@ export function LomaViewer() {
     return b;
   };
 
+  /** Selected grid photos (originals) when more than one is ticked, else null. */
+  const groupFiles = (): File[] | null => { const m = multiFiles(); return m.length > 1 ? m.map((s) => s.file) : null; };
+  const shareGroup = async (pkg?: string): Promise<boolean> => {
+    const files = groupFiles(); if (!files) return false;
+    const t = sonnerToast.loading(`Preparo ${files.length} foto…`);
+    try {
+      if (await androidShareMultiple(files, pkg)) { sonnerToast.dismiss(t); return true; }
+      files.forEach((f, i) => setTimeout(() => download(f, f.name), i * 250));
+      sonnerToast.success(`${files.length} foto scaricate`, { id: t, duration: QUICK_MS });
+    } catch { sonnerToast.error("Condivisione non riuscita", { id: t }); }
+    return true;
+  };
+  const saveGroup = async (): Promise<boolean> => {
+    const files = groupFiles(); if (!files) return false;
+    const t = sonnerToast.loading(`Salvo ${files.length} foto…`);
+    let ok = 0;
+    if ((window as any).LomaAndroid?.saveCommit) {
+      for (const f of files) if (await androidSave(f, f.name)) ok++;
+      sonnerToast.success(`${ok}/${files.length} foto salvate in Immagini/LoMa`, { id: t, duration: 2000 });
+      return true;
+    }
+    const dirPicker = (window as any).showDirectoryPicker;
+    if (dirPicker) {
+      try {
+        const d = await dirPicker({ id: "loma-save", mode: "readwrite" });
+        for (const f of files) { const h = await d.getFileHandle(f.name, { create: true }); const w = await h.createWritable(); await w.write(f); await w.close(); ok++; }
+        sonnerToast.success(`${ok} foto salvate in ${d.name}`, { id: t, duration: 2000 });
+        return true;
+      } catch (e: any) { if (e?.name === "AbortError") { sonnerToast.dismiss(t); return true; } }
+    }
+    files.forEach((f, i) => setTimeout(() => download(f, f.name), i * 250));
+    sonnerToast.success(`${files.length} foto scaricate`, { id: t, duration: 2000 });
+    return true;
+  };
+
   const save = async () => {
+    if (await saveGroup()) return;
     if (!need()) return;
     const f = await outputFile("_loma");
     download(f, f.name);
@@ -918,6 +954,7 @@ export function LomaViewer() {
   };
 
   const share = async (target: string, fallback?: string) => {
+    if (await shareGroup()) return;
     if (img && imgEl.current) {
       const b = await renderClean(imgEl.current, adjust, crop, "image/png");
       const f = new File([b], `${baseName(img.file.name)}.png`, { type: "image/png" });
@@ -947,6 +984,7 @@ export function LomaViewer() {
     setPrintSrc(URL.createObjectURL(b));
   };
   const sharePhoto = async () => {
+    if (await shareGroup()) return;
     if (!img || !imgEl.current) return;
     try {
       let f: File;
@@ -976,8 +1014,9 @@ export function LomaViewer() {
     if (target !== "iCloud Drive") {
       // Drive / OneDrive: copy into the folder synced by the desktop app (Google Drive for desktop / OneDrive).
       const kind = target === "OneDrive" ? "onedrive" : "drive";
-      if (!img || !imgEl.current) { notify(`Carica prima un'immagine da salvare su ${target}.`); return; }
       const desk = (window as any).lomaDesktop;
+      if (!desk?.saveToFolder && groupFiles()) { await shareGroup(kind === "drive" ? "com.google.android.apps.docs" : "com.microsoft.skydrive"); return; }
+      if (!img || !imgEl.current) { notify(`Carica prima un'immagine da salvare su ${target}.`); return; }
       const f = await outputFile();
       if (!desk?.saveToFolder) {
         // Browser: save dialog, where the user picks the Drive/OneDrive folder.
@@ -1019,6 +1058,7 @@ export function LomaViewer() {
       });
       return;
     }
+    if (groupFiles() && !(window as any).showSaveFilePicker) { await shareGroup(); return; }
     if (!img || !imgEl.current) { notify(`Carica prima un'immagine da salvare su ${target}.`); return; }
     const f = await outputFile();
     const picker = (window as any).showSaveFilePicker;
@@ -1409,7 +1449,7 @@ export function LomaViewer() {
           )}
           {view === "grid" && session.length > 0 && (
             <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} hideLock={mob} filter={filter} setFilter={setFilter} total={session.length}
-              selected={multi} onSelect={selectGrid} onClearSel={() => setMulti(new Set())} onSelectAll={(ids) => setMulti(new Set(ids))} />
+              selected={multi} onSelect={selectGrid} onClearSel={() => setMulti(new Set())} onSelectAll={(ids) => setMulti(new Set(ids))} onShareSel={() => shareGroup()} onSaveSel={() => saveGroup()} />
           )}
         </main>
         {compare && active === "A" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="B" onActivate={swapActive} view={other?.img ? { scale: other.scale, off: other.off } : null} onView={paneView} />}
