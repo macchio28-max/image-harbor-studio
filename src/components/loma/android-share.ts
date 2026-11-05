@@ -1,13 +1,27 @@
 // Android APK: WebView's navigator.share can't send files, so hand them to the native
 // LomaAndroid bridge, which writes them to cache and fires ACTION_SEND via FileProvider.
-const CHUNK = 384 * 1024; // multiple of 3 → each chunk is clean Base64
+const CHUNK = 1024 * 1024 * 3 / 3 * 1 - ((1024 * 1024) % 3); // 1 MB rounded to a multiple of 3 → clean Base64 per chunk
+const COMMON = /^image\/(jpeg|png|webp|gif)$/;
+const COMMON_EXT = /\.(jpe?g|png|webp|gif)$/i;
+const isCommon = (f: File) => COMMON.test(f.type) || COMMON_EXT.test(f.name);
+const mimeOf = (f: File) => f.type || (/\.png$/i.test(f.name) ? "image/png" : /\.webp$/i.test(f.name) ? "image/webp" : /\.gif$/i.test(f.name) ? "image/gif" : "image/jpeg");
+
+/** Base64 via Chromium (FileReader) instead of a JS byte loop. */
+function b64(blob: Blob): Promise<string> {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => { const u = String(r.result); res(u.slice(u.indexOf(",") + 1)); };
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(blob);
+  });
+}
 
 export async function androidShare(file: File, pkg?: string): Promise<boolean> {
   const a = (window as any).LomaAndroid;
   if (!a?.shareBegin) return false;
   let f = file;
   // Other apps rarely accept RAW: send a JPEG instead.
-  if (!/^image\/(jpeg|png|webp|gif)$/.test(f.type)) {
+  if (!isCommon(f)) {
     try {
       const { decodeSource } = await import("./convert");
       const bm = await decodeSource(f);
@@ -17,11 +31,11 @@ export async function androidShare(file: File, pkg?: string): Promise<boolean> {
       f = new File([b], f.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
     } catch { /* send as is */ }
   }
-  return (await upload(a, f, f.name, f.type || "image/jpeg")) ? !!(pkg && a.shareCommitTo ? a.shareCommitTo(upId, pkg) : a.shareCommit(upId)) : false;
+  return (await upload(a, f, f.name, mimeOf(f))) ? !!(pkg && a.shareCommitTo ? a.shareCommitTo(upId, pkg) : a.shareCommit(upId)) : false;
 }
 
 async function toShareable(file: File): Promise<File> {
-  if (/^image\/(jpeg|png|webp|gif)$/.test(file.type)) return file;
+  if (isCommon(file)) return file;
   try {
     const { decodeSource } = await import("./convert");
     const bm = await decodeSource(file);
@@ -39,7 +53,7 @@ export async function androidShareMultiple(files: File[], pkg?: string): Promise
     const ids: string[] = [];
     for (const f0 of files) {
       const f = await toShareable(f0);
-      if (await upload(a, f, f.name, f.type || "image/jpeg")) ids.push(upId);
+      if (await upload(a, f, f.name, mimeOf(f))) ids.push(upId);
     }
     return ids.length ? !!a.shareCommitMulti(ids.join(","), pkg || "") : false;
   }
@@ -56,9 +70,7 @@ async function upload(a: any, b: Blob, name: string, mime: string): Promise<bool
   const id: string = a.shareBegin(name, mime);
   if (!id) return false;
   for (let o = 0; o < b.size; o += CHUNK) {
-    const u = new Uint8Array(await b.slice(o, o + CHUNK).arrayBuffer());
-    let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000));
-    if (!a.shareChunk(id, btoa(s))) return false;
+    if (!a.shareChunk(id, await b64(b.slice(o, o + CHUNK)))) return false;
   }
   upId = id;
   return true;
