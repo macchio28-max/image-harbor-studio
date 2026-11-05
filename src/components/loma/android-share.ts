@@ -1,6 +1,6 @@
 // Android APK: WebView's navigator.share can't send files, so hand them to the native
 // LomaAndroid bridge, which writes them to cache and fires ACTION_SEND via FileProvider.
-const CHUNK = 1024 * 1024 * 3 / 3 * 1 - ((1024 * 1024) % 3); // 1 MB rounded to a multiple of 3 → clean Base64 per chunk
+const CHUNK = 1048575; // ~1 MB, multiple of 3 → each chunk is clean Base64
 const COMMON = /^image\/(jpeg|png|webp|gif)$/;
 const COMMON_EXT = /\.(jpe?g|png|webp|gif)$/i;
 const isCommon = (f: File) => COMMON.test(f.type) || COMMON_EXT.test(f.name);
