@@ -1280,7 +1280,7 @@ export function LomaViewer() {
             <div
               onPointerDown={(e) => e.stopPropagation()}
               onDoubleClick={(e) => e.stopPropagation()}
-              className="no-drag absolute right-2 top-2 z-30 flex gap-1"
+              className={`no-drag absolute right-2 z-30 flex gap-1 ${compare ? "top-9 sm:top-2" : "top-2"}`}
             >
               <button onClick={async () => { const ok = await copyToClipboard(); ok ? sonnerToast.success("Immagine copiata negli appunti", { duration: QUICK_MS }) : sonnerToast.error("Copia non riuscita"); }}
                 title="Copia negli appunti" className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
@@ -1294,7 +1294,7 @@ export function LomaViewer() {
                 className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
                 {isFull ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </button>
-              {session.length > 1 && view === "loupe" && (
+              {!compare && session.length > 1 && view === "loupe" && (
                 <button onClick={() => { if (document.fullscreenElement) document.exitFullscreen?.(); setStripOpen(false); setView("grid"); }} title="Torna alla griglia (Esc)"
                   className="inline-flex items-center gap-1 rounded-md bg-background/40 p-1.5 text-xs text-foreground/70 opacity-60 backdrop-blur transition hover:bg-background/80 hover:text-foreground hover:opacity-100">
                   <LayoutGrid className="h-4 w-4" /> Griglia
@@ -1375,16 +1375,16 @@ export function LomaViewer() {
                   })}
                 </div>
               )}
-              <div className="absolute bottom-3 left-3 rounded bg-popover/80 px-2 py-1 text-xs text-muted-foreground">
+              <div className={`absolute bottom-3 left-3 rounded bg-popover/80 px-2 py-1 text-xs text-muted-foreground ${compare ? "max-w-[calc(100%-24px)] truncate" : ""}`}>
                 {Math.round(scale * 100)}% · {img.w}×{img.h}{crop ? ` · ritaglio ${Math.round(crop.w)}×${Math.round(crop.h)}` : ""}
               </div>
-              <button
+              {!compare && <button
                 onClick={() => fileInput.current?.click()}
                 onPointerDown={(e) => e.stopPropagation()}
                 className="absolute bottom-3 right-3 inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
               >
                 <FolderOpen className="h-4 w-4" /> Apri...
-              </button>
+              </button>}
             </>
           )}
           {img && view === "loupe" && visible.length > 1 && (["prev", "next"] as const).map((dir) => (

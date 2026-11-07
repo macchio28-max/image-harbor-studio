@@ -1,5 +1,5 @@
-- [ ] Independent A/B collections, folder import on both sides, single-photo close/replacement and comparison exit.
-- [ ] Verify A/B collections with tests and desktop/tablet browser flows.
+- [x] Independent A/B collections, folder import on both sides, single-photo close/replacement and comparison exit.
+- [x] Verify A/B collections with tests and desktop/tablet browser flows.
 - [x] White track / blue thumb scrollbars in shared styles across platforms.
 - [x] Local photo/text/shape compositor with transforms, blend modes and flattened PNG export to viewer.
 - [x] Persistent development presets and favorites, quick application without changing crop.
