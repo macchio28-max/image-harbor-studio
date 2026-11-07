@@ -1,3 +1,6 @@
+- [ ] Center A/B graphics; move photos with mouse, touch and stylus.
+- [ ] Add LoMa Prompt and external photo + full-prompt sharing without internal AI.
+- [ ] Verify requested tablet workflows.
 - [x] Independent A/B collections, folder import on both sides, single-photo close/replacement and comparison exit.
 - [x] Verify A/B collections with tests and desktop/tablet browser flows.
 - [x] White track / blue thumb scrollbars in shared styles across platforms.
