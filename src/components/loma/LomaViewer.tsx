@@ -23,6 +23,9 @@ import * as B from "./brand-icons";
 import { DevelopPanel } from "./DevelopPanel";
 import { Filmstrip } from "./Filmstrip";
 import { ComparePane } from "./ComparePane";
+import { CompareWorkspace } from "./CompareWorkspace";
+import { photoFolder, removeComparePhoto, type CompareItem } from "./compare-collection";
+import { Button } from "@/components/ui/button";
 import { MailChoice, WEBMAIL_PRESETS, serviceOf, type MailAccount } from "./MailChoice";
 import { CloudHub } from "./CloudHub";
 import { FtpDialog } from "./FtpDialog";
@@ -64,6 +67,9 @@ export function LomaViewer() {
   const [sel, setSel] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [compare, setCompare] = useState(false);
   const [active, setActive] = useState<"A" | "B">("A");
+  const activeRef = useRef(active); activeRef.current = active;
+  const loadGeneration = useRef({ A: 0, B: 0 });
+  const cloudSide = useRef<"A" | "B" | null>(null);
   const [other, setOther] = useState<{ img: Loaded | null; adjust: Adjust; crop: typeof crop; scale: number; off: { x: number; y: number }; curId: string | null; snap: string | null } | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [imgReady, setImgReady] = useState(0);
@@ -235,14 +241,16 @@ export function LomaViewer() {
     else stage.current?.requestFullscreen?.().catch(() => document.documentElement.requestFullscreen?.());
   };
 
-  const openFile = async (file: File) => {
+  const openFile = async (file: File, side = activeRef.current) => {
+    const generation = ++loadGeneration.current[side];
+    const valid = () => loadGeneration.current[side] === generation;
     let url = URL.createObjectURL(file);
     const isRaw = RAWLIKE.test(file.name);
     let preview: Blob | null = null;
     // 1) Picture first: RAW shows its embedded JPEG immediately; metadata is read afterwards.
     const { decodeExtra } = await import("./decode-extra");
     const decoded = await decodeExtra(file);
-    if (decoded) url = URL.createObjectURL(decoded);
+    if (decoded) { URL.revokeObjectURL(url); url = URL.createObjectURL(decoded); }
     if (isRaw && !decoded) {
       const { extractRawPreview } = await import("./raw-preview");
       preview = await extractRawPreview(file, { deep: false });
@@ -257,7 +265,13 @@ export function LomaViewer() {
     const probe = new Image();
     probe.decoding = "async";
     probe.onload = () => {
-      setImg({ file, url, w: probe.naturalWidth, h: probe.naturalHeight, meta: {} as Meta });
+      if (!valid()) { URL.revokeObjectURL(url); return; }
+      const loaded = { file, url, w: probe.naturalWidth, h: probe.naturalHeight, meta: {} as Meta };
+      if (activeRef.current !== side) {
+        setOther(previous => ({ img: loaded, adjust: defaultAdjust, crop: null, scale: 1, off: { x: 0, y: 0 }, curId: previous?.curId ?? null, snap: null }));
+        void loadMeta(); return;
+      }
+      setImg(loaded);
       setAdjust(defaultAdjust);
       setCrop(null); setCropping(false);
       setSel(null);
@@ -293,12 +307,17 @@ export function LomaViewer() {
         }
         if (preview && (!(meta as any).Model || !(meta as any).FNumber || !(meta as any).ExposureTime)) merge(await tryParse(await preview.arrayBuffer()));
       }
-      setImg((cur: any) => (cur && cur.file === file ? { ...cur, meta } : cur));
+      if (!valid()) return;
+      if (activeRef.current === side) setImg(cur => cur?.file === file ? { ...cur, meta } : cur);
+      else setOther(cur => cur?.img?.file === file ? { ...cur, img: { ...cur.img, meta } } : cur);
     };
   };
 
   // ---------- Culling session ----------
-  const [session, setSession] = useState<CullItem[]>([]);
+  const [collections, setCollections] = useState<Record<"A" | "B", CompareItem[]>>({ A: [], B: [] });
+  const collectionsRef = useRef(collections); collectionsRef.current = collections;
+  const session = collections[active];
+  const setSession = (update: CompareItem[] | ((items: CompareItem[]) => CompareItem[])) => setCollections(previous => ({ ...previous, [active]: typeof update === "function" ? update(previous[active]) : update }));
   const [curId, setCurId] = useState<string | null>(null);
   const [filter, setFilter] = useState<CullFilter>({ kind: "all", minStars: 0 });
   const [stripOpen, setStripOpen] = useState(false);
@@ -339,7 +358,9 @@ export function LomaViewer() {
     try { if (img && preview.current && (crop || JSON.stringify(adjust) !== JSON.stringify(defaultAdjust))) snap = preview.current.toDataURL("image/jpeg", 0.9); } catch { /* ignore */ }
     const o = other;
     setOther({ img, adjust, crop, scale, off, curId, snap });
-    setActive((a) => (a === "A" ? "B" : "A"));
+    activeRef.current = active === "A" ? "B" : "A";
+    setActive(activeRef.current);
+    setMulti(new Set()); setView("loupe");
     setImg(o?.img ?? null);
     setAdjust(o?.adjust ?? defaultAdjust);
     setCrop(o?.crop ?? null);
@@ -364,7 +385,64 @@ export function LomaViewer() {
   const updateCur = (p: Partial<CullItem>) =>
     curId && setSession((s) => s.map((x) => (x.id === curId ? { ...x, ...p } : x)));
 
+  const addCompareFiles = async (incoming: File[], side: "A" | "B") => {
+    const files = incoming.filter(file => IMAGE_RE.test(file.name)).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    if (!files.length) return;
+    const batch = `Immagini ${new Date().toLocaleTimeString("it-IT")}`;
+    const added: CompareItem[] = files.map(file => ({ id: crypto.randomUUID(), file, folder: photoFolder(file, batch), thumb: null, rating: 0, locked: false, flagged: false }));
+    setCollections(previous => ({ ...previous, [side]: [...previous[side], ...added] }));
+    const first = added[0];
+    if (!first) return;
+    if (activeRef.current === side) { setCurId(first.id); setView("loupe"); setMulti(new Set()); }
+    else setOther(previous => ({ img: previous?.img ?? null, adjust: previous?.adjust ?? defaultAdjust, crop: previous?.crop ?? null, scale: previous?.scale ?? 1, off: previous?.off ?? { x: 0, y: 0 }, curId: first.id, snap: previous?.snap ?? null }));
+    void openFile(first.file, side);
+    let next = 0;
+    const worker = async () => {
+      while (next < added.length) {
+        const item = added[next++]; if (!item) return;
+        const result = await readCull(item.file, { light: true }).catch(() => ({}));
+        setCollections(previous => ({ ...previous, [side]: previous[side].map(photo => photo.id === item.id ? { ...photo, ...result } : photo) }));
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+  };
+  const pickCompare = (side: "A" | "B", id: string) => {
+    const item = collectionsRef.current[side].find(photo => photo.id === id); if (!item) return;
+    if (activeRef.current === side) setCurId(id);
+    else setOther(previous => ({ img: previous?.img ?? null, adjust: defaultAdjust, crop: null, scale: previous?.scale ?? 1, off: previous?.off ?? { x: 0, y: 0 }, curId: id, snap: null }));
+    void openFile(item.file, side);
+  };
+  const removeCompare = (side: "A" | "B", id: string) => {
+    const current = side === activeRef.current ? curId : other?.curId ?? null;
+    const next = removeComparePhoto(collectionsRef.current[side], current, id);
+    const removed = collectionsRef.current[side].find(photo => photo.id === id);
+    if (removed?.thumb?.startsWith("blob:")) URL.revokeObjectURL(removed.thumb);
+    setCollections(previous => ({ ...previous, [side]: previous[side].filter(photo => photo.id !== id) }));
+    setMulti(previous => { const result = new Set(previous); result.delete(id); return result; });
+    if (current === id) {
+      loadGeneration.current[side]++;
+      const loaded = side === activeRef.current ? img : other?.img;
+      if (loaded?.url.startsWith("blob:")) URL.revokeObjectURL(loaded.url);
+      if (side === activeRef.current) { setImg(null); setCurId(next.current); setAdjust(defaultAdjust); setCrop(null); setSel(null); }
+      else setOther(null);
+      if (next.current) pickCompare(side, next.current);
+    }
+    sonnerToast.success("Foto chiusa", { duration: QUICK_MS });
+  };
+  const toggleCompare = () => {
+    if (!compare && img && !session.some(photo => photo.file === img.file)) {
+      const id = crypto.randomUUID();
+      setSession(previous => [...previous, { id, file: img.file, thumb: null, rating: 0, locked: false, flagged: false, folder: "Immagini" }]);
+      setCurId(id);
+    }
+    setView("loupe"); setStripOpen(false); setCompare(previous => !previous);
+  };
+  const comparePane = (side: "A" | "B", children: ReactNode) => <CompareWorkspace key={side} label={side} active={active === side} items={collections[side]} current={active === side ? curId : other?.curId ?? null}
+    onImport={files => { void addCompareFiles(files, side); }} onPick={id => pickCompare(side, id)} onRemove={id => removeCompare(side, id)}
+    onCloud={() => { cloudSide.current = side; setCloudHub("import"); }}>{children}</CompareWorkspace>;
+
   const importFiles = async (list: FileList | null) => {
+    if (compare) return addCompareFiles(Array.from(list ?? []), cloudSide.current ?? activeRef.current);
     const files = Array.from(list ?? []).filter((f) => IMAGE_RE.test(f.name))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     if (!files.length) { notify("Nessuna foto trovata."); return; }
@@ -834,9 +912,12 @@ export function LomaViewer() {
 
   const closeAll = () => {
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
-    session.forEach((s) => s.thumb?.startsWith("blob:") && URL.revokeObjectURL(s.thumb));
+    Object.values(collections).flat().forEach(s => s.thumb?.startsWith("blob:") && URL.revokeObjectURL(s.thumb));
+    loadGeneration.current.A++; loadGeneration.current.B++;
+    if (other?.img?.url.startsWith("blob:")) URL.revokeObjectURL(other.img.url);
     if (img?.url?.startsWith("blob:")) URL.revokeObjectURL(img.url);
-    setImg(null); setSession([]); setCurId(null); setView("loupe"); setCompare(false); setOther(null); setActive("A");
+    setMulti(new Set()); setCollections({ A: [], B: [] }); activeRef.current = "A";
+    setImg(null); setCurId(null); setView("loupe"); setCompare(false); setOther(null); setActive("A");
     setAdjust(defaultAdjust); setCrop(null); setSel(null); setScale(1); setOff({ x: 0, y: 0 }); setHist(null);
     sonnerToast.success("Sessione chiusa", { duration: QUICK_MS });
   };
@@ -1163,128 +1244,7 @@ export function LomaViewer() {
     transformOrigin: "center", width: "100%", height: "100%",
   };
 
-  const isMacDesk = typeof window !== "undefined" && !!(window as any).lomaDesktop && /Mac/.test(navigator.platform);
-  return (
-    <div className="flex h-dvh flex-col bg-toolbar text-foreground select-none">
-      {/* Title bar: always draggable */}
-      <div className="drag-region flex h-7 shrink-0 items-center justify-center border-b border-border bg-toolbar px-20 text-[11px] font-medium text-muted-foreground">
-        <span className="truncate">{img ? img.file.name : "LoMa VIEWER"}</span>
-      </div>
-      {/* Toolbar */}
-      <header className="flex shrink-0 items-stretch border-b border-border bg-toolbar">
-        <div className={`drag-region flex shrink-0 items-center gap-1.5 px-2 ${isMacDesk ? "pl-[4.5rem]" : ""}`}>
-          <img src={logo.url} alt="LoMa VIEWER" className="h-8 w-8 rounded-full" />
-          <div className="leading-none">
-            <div className="text-sm font-bold tracking-tight">LoMa</div>
-            <div className="text-[9px] font-bold tracking-[0.2em] text-primary">VIEWER</div>
-          </div>
-        </div>
-        <div onClick={phone ? (e) => { if ((e.target as HTMLElement).closest("button")) setMoreOpen(false); } : undefined}
-          className={phone ? (moreOpen ? "no-drag fixed inset-x-2 bottom-16 z-50 max-h-[65vh] overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-2xl" : "hidden") : "no-drag flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 py-1"}>
-          <div className={phone ? "flex flex-wrap items-stretch gap-1" : "flex w-full items-stretch gap-0.5"}>
-        <Group>
-          <Tool icon={<HardDrive className="text-primary" />} label="Importa" tip="Importa scheda / cartella" onClick={() => folderInput.current?.click()} />
-          <Tool icon={<Images />} label="Apri" tip="Apri più file" onClick={() => multiInput.current?.click()} />
-          <Tool icon={<GalleryHorizontal />} label="Strip" tip="Filmstrip" active={stripOpen && session.length > 0 && view !== "grid"} onClick={() => {
-            const on = !stripOpen;
-            setStripOpen(on);
-            if (on && view === "grid") openLoupe();
-          }} />
-          <Tool icon={view === "grid" ? <Square /> : <LayoutGrid />} label={view === "grid" ? "Singola" : "Griglia"} active={view === "grid"} onClick={() => {
-            if (!session.length) return notify("Importa prima più foto.");
-            if (view === "grid") return openLoupe();
-            setStripOpen(false);
-            setView("grid");
-          }} />
-          <Tool icon={<Save className="text-primary" />} label="Salva" onClick={save} />
-          <Tool icon={<MousePointer2 />} label="Area" tip="Seleziona area" active={mode === "select"} onClick={() => setMode("select")} />
-          <Tool icon={<Hand />} label="Sposta" active={mode === "move"} onClick={() => setMode("move")} />
-        </Group>
-        <Group>
-          <div className="no-drag flex shrink-0 flex-col items-center justify-center gap-0.5 px-1">
-            <div className="flex items-center gap-0.5">
-              <ZBtn onClick={() => setZoom(scale / 1.25)}><ZoomOut className="h-3.5 w-3.5" /></ZBtn>
-              <span className="w-10 text-center text-[10px] tabular-nums">{Math.round(scale * 100)}%</span>
-              <ZBtn onClick={() => setZoom(scale * 1.25)}><ZoomIn className="h-3.5 w-3.5" /></ZBtn>
-            </div>
-            <div className="flex items-center gap-0.5">
-              <ZBtn onClick={() => setZoom(1)}>1:1</ZBtn>
-              <ZBtn onClick={() => setZoom(2)}>1:2</ZBtn>
-              <ZBtn onClick={() => setZoom(3)}>1:3</ZBtn>
-              <ZBtn onClick={() => fit()}>Fit</ZBtn>
-            </div>
-          </div>
-          <Tool icon={<Columns2 />} label="A / B" tip="Confronta due foto" active={compare} onClick={() => setCompare((c) => !c)} />
-          <Tool icon={<SlidersHorizontal className="text-primary" />} label="Sviluppo" tip="Pannello strumenti di sviluppo" active={toolsOpen} onClick={() => setToolsOpen((o) => !o)} />
-          <Tool icon={<Layers className="text-primary" />} label="Livelli" tip="Compositore di foto, testo e forme" active={compositionOpen} onClick={() => setCompositionOpen(true)} />
-          <Tool icon={<Camera />} label="Cattura" tip="Screenshot a risoluzione nativa" onClick={screenshot} />
-          <Tool icon={<Eraser className="text-chart-3" />} label="Pulisci" tip="Rimuovi tutti i metadati" onClick={deepClean} />
-          <div className={canUndo ? "" : "pointer-events-none opacity-40"}><Tool icon={<Undo2 />} label="Annulla" tip="Annulla ultima modifica (Ctrl/⌘+Z)" onClick={() => travel(-1)} /></div>
-          <div className={canRedo ? "" : "pointer-events-none opacity-40"}><Tool icon={<Redo2 />} label="Ripeti" tip="Ripeti modifica (Ctrl+Y / ⌘+⇧+Z)" onClick={() => travel(1)} /></div>
-        </Group>
-        <Group>
-          <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/", "com.openai.chatgpt")} />
-          <Tool icon={<B.MetaAIIcon />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/", "com.facebook.stellar")} />
-          <Tool icon={<B.GeminiIcon />} label="Gemini" onClick={() => openAI("Gemini", "https://gemini.google.com/", "com.google.android.apps.bard")} />
-          <Tool icon={<B.FlowIcon />} label="Flow" onClick={() => openAI("Flow", "https://labs.google/fx/tools/flow", "com.google.android.apps.labs.flow")} />
-        </Group>
-        <Group>
-          {!touch && <>
-          <Tool icon={<B.TopazPhotoIcon />} label="Topaz" tip="Topaz Photo AI" onClick={() => topaz("Topaz Photo AI")} />
-          <Tool icon={<B.TopazGigapixelIcon />} label="Giga" tip="Topaz Gigapixel AI" onClick={() => topaz("Topaz Gigapixel AI")} />
-          <Tool icon={<B.PhotoshopIcon />} label="Ps" tip="Adobe Photoshop" onClick={() => topaz("Adobe Photoshop")} />
-          <Tool icon={<B.LightroomIcon />} label="Lr" tip="Adobe Lightroom" onClick={() => topaz("Adobe Lightroom")} />
-          <Tool icon={<B.LightroomClassicIcon />} label="Lrc" tip="Adobe Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
-          <Tool icon={<Settings />} label="App" tip="Percorsi programmi" onClick={() => setTopazOpen(true)} />
-          </>}
-          {touch && <Tool icon={<B.LightroomIcon />} label="Lr" tip="Apri in Lightroom mobile" onClick={() => openAI("Lightroom", "https://lightroom.adobe.com/", "com.adobe.lrmobile")} />}
-          <Tool icon={<Repeat />} label="Converti" tip="Converti immagini (singola o batch)" onClick={() => (img || session.length ? setConvOpen(true) : notify("Apri prima un'immagine"))} />
-          <Tool icon={<Printer />} label="Stampa" tip="Stampa fotografica" onClick={openPrint} />
-          <Tool icon={<Trash2 />} label="Cache" tip="Svuota cache e memoria" onClick={clearCache} />
-        </Group>
-        <Group last>
-          {touch ? (
-            <>
-            <Tool icon={<Server className={ftpRunning ? "animate-pulse text-primary" : "text-primary"} />} label="FTP" tip="FTP: ricevi dalla fotocamera, importa e carica" onClick={() => setFtpOpen(true)} />
-            <Tool icon={<Cloud className="text-primary" />} label="Hub" tip="Cloud Hub" onClick={() => setCloudHub("upload")} />
-            <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => openAI("Google Drive", "https://drive.google.com/", "com.google.android.apps.docs")} />
-            <Tool icon={<B.OneDriveIcon />} label="OneDrv" tip="OneDrive" onClick={() => openAI("OneDrive", "https://onedrive.live.com/", "com.microsoft.skydrive")} />
-            <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => (img ? sharePhoto() : notify("Apri prima un'immagine da condividere."))} />
-            <Tool icon={<B.MailIcon />} label="Mail" onClick={() => mail()} />
-            <Tool wide icon={<Share2 className="text-primary" />} label="Condividi" tip="Apri la condivisione del sistema" onClick={() => (img ? sharePhoto() : notify("Apri prima un'immagine da condividere."))} />
-            </>
-          ) : (
-            <>
-            <Tool icon={<Server className={ftpRunning ? "animate-pulse text-primary" : "text-primary"} />} label="FTP" tip="FTP: ricevi dalla fotocamera, importa e carica" onClick={() => setFtpOpen(true)} />
-            <Tool icon={<Cloud className="text-primary" />} label="Hub" tip="Cloud Hub: carica / importa nelle cartelle Drive" onClick={() => setCloudHub("upload")} />
-            <Tool icon={<B.DriveIcon />} label="Drive" tip="Copia rapida nella cartella Drive del computer" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
-            <Tool icon={<B.OneDriveIcon />} label="OneDrv" tip="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
-            <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => uploadCloud("iCloud Drive", "https://www.icloud.com/iclouddrive/")} />
-            <Tool icon={<B.MailIcon />} label="Mail" onClick={() => mail()} />
-            <Tool icon={<B.WhatsAppIcon />} label="WApp" tip="WhatsApp" onClick={() => whatsapp()} />
-            <Tool icon={<B.AirDropIcon />} label="AirDrop" onClick={() => airdrop()} />
-            <Tool icon={<B.LocalSendIcon />} label="LSend" tip="LocalSend" onClick={() => topaz("LocalSend")} />
-            </>
-          )}
-        </Group>
-        </div></div>
-      </header>
-
-      <div className="flex min-h-0 flex-1 gap-3 p-3">
-        {toolsOpen && (
-          <DevelopPanel
-            adjust={adjust} setAdjust={setAdjust} hist={hist} hasImage={!!img}
-            onAutoWb={autoWb} onAutoExposure={autoExposure}
-            cropping={cropping} aspect={aspect} sheet={phone}
-            onAspect={aspectSel} onStartCrop={startCrop} onApplyCrop={applyCrop} onCancelCrop={cancelCrop} onResetCrop={() => { setCrop(null); setSel(null); setCropping(false); }}
-            onResetAll={() => { setAdjust(defaultAdjust); setCrop(null); setSel(null); setCropping(false); }}
-            onClose={() => setToolsOpen(false)}
-          />
-        )}
-        {/* Canvas */}
-        <div className="flex min-w-0 flex-1 gap-2">
-        {compare && active === "B" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="A" onActivate={swapActive} view={other?.img ? { scale: other.scale, off: other.off } : null} onView={paneView} />}
-        <main
+  const renderMain = () => (<main
           ref={stage}
           className={`relative min-w-0 flex-1 touch-none overflow-hidden rounded-lg border bg-canvas ${drag || compare ? "border-primary" : "border-border"} ${img ? (mode === "move" ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair") : ""}`}
           onPointerDown={onDown}
@@ -1312,7 +1272,7 @@ export function LomaViewer() {
             e.preventDefault();
             setDrag(false);
             const fs = e.dataTransfer.files;
-            if (fs.length > 1) importFiles(fs);
+            if (compare || fs.length > 1) importFiles(fs);
             else if (fs[0]) openFile(fs[0]);
           }}
         >
@@ -1340,7 +1300,7 @@ export function LomaViewer() {
                   <LayoutGrid className="h-4 w-4" /> Griglia
                 </button>
               )}
-              <button onClick={closeAll} title="Chiudi immagine e sessione"
+              <button onClick={compare ? () => { if (curId) removeCompare(active, curId); } : closeAll} title={compare ? "Chiudi questa foto" : "Chiudi immagine e sessione"}
                 className="rounded-md bg-background/40 p-1.5 text-foreground/70 opacity-60 backdrop-blur transition hover:bg-destructive/80 hover:text-destructive-foreground hover:opacity-100">
                 <X className="h-4 w-4" />
               </button>
@@ -1379,7 +1339,7 @@ export function LomaViewer() {
                 </div>
               </div>
               {compare && (
-                <span className="absolute left-2 top-2 z-20 rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground">{active} · attiva · {img.file.name}</span>
+                <span className="pointer-events-none absolute left-2 top-2 z-20 max-w-[45%] truncate rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground">{active} · attiva · {img.file.name}</span>
               )}
               {cropping && (
                 <div onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
@@ -1442,7 +1402,7 @@ export function LomaViewer() {
               </span>
             </button>
           ))}
-          {phone && img && view === "loupe" && (
+          {phone && !compare && img && view === "loupe" && (
             <button aria-label="Informazioni immagine" onPointerDown={(e) => e.stopPropagation()} onClick={() => setInfoOpen(true)}
               className="absolute left-2 top-2 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-popover/80 text-foreground shadow">
               <Info className="h-5 w-5" />
@@ -1451,12 +1411,136 @@ export function LomaViewer() {
           {toast && (
             <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-md bg-popover px-4 py-2 text-sm shadow-xl">{toast}</div>
           )}
-          {view === "grid" && session.length > 0 && (
+          {!compare && view === "grid" && session.length > 0 && (
             <ContactSheet items={visible} current={curId} size={gridSize} setSize={setGridSize} onPick={setCurId} onOpen={openLoupe} hideLock={mob} filter={filter} setFilter={setFilter} total={session.length}
               selected={multi} onSelect={selectGrid} onClearSel={() => setMulti(new Set())} onSelectAll={(ids) => setMulti(new Set(ids))} onShareSel={() => shareGroup()} onSaveSel={() => saveGroup()} />
           )}
-        </main>
-        {compare && active === "A" && <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="B" onActivate={swapActive} view={other?.img ? { scale: other.scale, off: other.off } : null} onView={paneView} />}
+        </main>);
+
+  const isMacDesk = typeof window !== "undefined" && !!(window as any).lomaDesktop && /Mac/.test(navigator.platform);
+  return (
+    <div className="flex h-dvh flex-col bg-toolbar text-foreground select-none">
+      {/* Title bar: always draggable */}
+      <div className="drag-region flex h-7 shrink-0 items-center justify-center border-b border-border bg-toolbar px-20 text-[11px] font-medium text-muted-foreground">
+        <span className="truncate">{img ? img.file.name : "LoMa VIEWER"}</span>
+      </div>
+      {/* Toolbar */}
+      <header className="flex shrink-0 items-stretch border-b border-border bg-toolbar">
+        <div className={`drag-region flex shrink-0 items-center gap-1.5 px-2 ${isMacDesk ? "pl-[4.5rem]" : ""}`}>
+          <img src={logo.url} alt="LoMa VIEWER" className="h-8 w-8 rounded-full" />
+          <div className="leading-none">
+            <div className="text-sm font-bold tracking-tight">LoMa</div>
+            <div className="text-[9px] font-bold tracking-[0.2em] text-primary">VIEWER</div>
+          </div>
+        </div>
+        <div onClick={phone ? (e) => { if ((e.target as HTMLElement).closest("button")) setMoreOpen(false); } : undefined}
+          className={phone ? (moreOpen ? "no-drag fixed inset-x-2 bottom-16 z-50 max-h-[65vh] overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-2xl" : "hidden") : "no-drag flex min-w-0 flex-1 items-stretch overflow-x-auto px-1 py-1"}>
+          <div className={phone ? "flex flex-wrap items-stretch gap-1" : "flex w-full items-stretch gap-0.5"}>
+        <Group>
+          <Tool icon={<HardDrive className="text-primary" />} label="Importa" tip="Importa scheda / cartella" onClick={() => folderInput.current?.click()} />
+          <Tool icon={<Images />} label="Apri" tip="Apri più file" onClick={() => multiInput.current?.click()} />
+          <Tool icon={<GalleryHorizontal />} label="Strip" tip="Filmstrip" active={stripOpen && session.length > 0 && view !== "grid"} onClick={() => {
+            const on = !stripOpen;
+            setStripOpen(on);
+            if (on && view === "grid") openLoupe();
+          }} />
+          <Tool icon={view === "grid" ? <Square /> : <LayoutGrid />} label={view === "grid" ? "Singola" : "Griglia"} active={view === "grid"} onClick={() => {
+            if (!session.length) return notify("Importa prima più foto.");
+            if (view === "grid") return openLoupe();
+            setStripOpen(false);
+            setView("grid");
+          }} />
+          <Tool icon={<Save className="text-primary" />} label="Salva" onClick={save} />
+          <Tool icon={<MousePointer2 />} label="Area" tip="Seleziona area" active={mode === "select"} onClick={() => setMode("select")} />
+          <Tool icon={<Hand />} label="Sposta" active={mode === "move"} onClick={() => setMode("move")} />
+        </Group>
+        <Group>
+          <div className="no-drag flex shrink-0 flex-col items-center justify-center gap-0.5 px-1">
+            <div className="flex items-center gap-0.5">
+              <ZBtn onClick={() => setZoom(scale / 1.25)}><ZoomOut className="h-3.5 w-3.5" /></ZBtn>
+              <span className="w-10 text-center text-[10px] tabular-nums">{Math.round(scale * 100)}%</span>
+              <ZBtn onClick={() => setZoom(scale * 1.25)}><ZoomIn className="h-3.5 w-3.5" /></ZBtn>
+            </div>
+            <div className="flex items-center gap-0.5">
+              <ZBtn onClick={() => setZoom(1)}>1:1</ZBtn>
+              <ZBtn onClick={() => setZoom(2)}>1:2</ZBtn>
+              <ZBtn onClick={() => setZoom(3)}>1:3</ZBtn>
+              <ZBtn onClick={() => fit()}>Fit</ZBtn>
+            </div>
+          </div>
+          <Tool icon={<Columns2 />} label="A / B" tip="Confronta due foto" active={compare} onClick={toggleCompare} />
+          <Tool icon={<SlidersHorizontal className="text-primary" />} label="Sviluppo" tip="Pannello strumenti di sviluppo" active={toolsOpen} onClick={() => setToolsOpen((o) => !o)} />
+          <Tool icon={<Layers className="text-primary" />} label="Livelli" tip="Compositore di foto, testo e forme" active={compositionOpen} onClick={() => setCompositionOpen(true)} />
+          <Tool icon={<Camera />} label="Cattura" tip="Screenshot a risoluzione nativa" onClick={screenshot} />
+          <Tool icon={<Eraser className="text-chart-3" />} label="Pulisci" tip="Rimuovi tutti i metadati" onClick={deepClean} />
+          <div className={canUndo ? "" : "pointer-events-none opacity-40"}><Tool icon={<Undo2 />} label="Annulla" tip="Annulla ultima modifica (Ctrl/⌘+Z)" onClick={() => travel(-1)} /></div>
+          <div className={canRedo ? "" : "pointer-events-none opacity-40"}><Tool icon={<Redo2 />} label="Ripeti" tip="Ripeti modifica (Ctrl+Y / ⌘+⇧+Z)" onClick={() => travel(1)} /></div>
+        </Group>
+        <Group>
+          <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/", "com.openai.chatgpt")} />
+          <Tool icon={<B.MetaAIIcon />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/", "com.facebook.stellar")} />
+          <Tool icon={<B.GeminiIcon />} label="Gemini" onClick={() => openAI("Gemini", "https://gemini.google.com/", "com.google.android.apps.bard")} />
+          <Tool icon={<B.FlowIcon />} label="Flow" onClick={() => openAI("Flow", "https://labs.google/fx/tools/flow", "com.google.android.apps.labs.flow")} />
+        </Group>
+        <Group>
+          {!touch && <>
+          <Tool icon={<B.TopazPhotoIcon />} label="Topaz" tip="Topaz Photo AI" onClick={() => topaz("Topaz Photo AI")} />
+          <Tool icon={<B.TopazGigapixelIcon />} label="Giga" tip="Topaz Gigapixel AI" onClick={() => topaz("Topaz Gigapixel AI")} />
+          <Tool icon={<B.PhotoshopIcon />} label="Ps" tip="Adobe Photoshop" onClick={() => topaz("Adobe Photoshop")} />
+          <Tool icon={<B.LightroomIcon />} label="Lr" tip="Adobe Lightroom" onClick={() => topaz("Adobe Lightroom")} />
+          <Tool icon={<B.LightroomClassicIcon />} label="Lrc" tip="Adobe Lightroom Classic" onClick={() => topaz("Adobe Lightroom Classic")} />
+          <Tool icon={<Settings />} label="App" tip="Percorsi programmi" onClick={() => setTopazOpen(true)} />
+          </>}
+          {touch && <Tool icon={<B.LightroomIcon />} label="Lr" tip="Apri in Lightroom mobile" onClick={() => openAI("Lightroom", "https://lightroom.adobe.com/", "com.adobe.lrmobile")} />}
+          <Tool icon={<Repeat />} label="Converti" tip="Converti immagini (singola o batch)" onClick={() => (img || session.length ? setConvOpen(true) : notify("Apri prima un'immagine"))} />
+          <Tool icon={<Printer />} label="Stampa" tip="Stampa fotografica" onClick={openPrint} />
+          <Tool icon={<Trash2 />} label="Cache" tip="Svuota cache e memoria" onClick={clearCache} />
+        </Group>
+        <Group last>
+          {touch ? (
+            <>
+            <Tool icon={<Server className={ftpRunning ? "animate-pulse text-primary" : "text-primary"} />} label="FTP" tip="FTP: ricevi dalla fotocamera, importa e carica" onClick={() => setFtpOpen(true)} />
+            <Tool icon={<Cloud className="text-primary" />} label="Hub" tip="Cloud Hub" onClick={() => setCloudHub("upload")} />
+            <Tool icon={<B.DriveIcon />} label="Drive" onClick={() => openAI("Google Drive", "https://drive.google.com/", "com.google.android.apps.docs")} />
+            <Tool icon={<B.OneDriveIcon />} label="OneDrv" tip="OneDrive" onClick={() => openAI("OneDrive", "https://onedrive.live.com/", "com.microsoft.skydrive")} />
+            <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => (img ? sharePhoto() : notify("Apri prima un'immagine da condividere."))} />
+            <Tool icon={<B.MailIcon />} label="Mail" onClick={() => mail()} />
+            <Tool wide icon={<Share2 className="text-primary" />} label="Condividi" tip="Apri la condivisione del sistema" onClick={() => (img ? sharePhoto() : notify("Apri prima un'immagine da condividere."))} />
+            </>
+          ) : (
+            <>
+            <Tool icon={<Server className={ftpRunning ? "animate-pulse text-primary" : "text-primary"} />} label="FTP" tip="FTP: ricevi dalla fotocamera, importa e carica" onClick={() => setFtpOpen(true)} />
+            <Tool icon={<Cloud className="text-primary" />} label="Hub" tip="Cloud Hub: carica / importa nelle cartelle Drive" onClick={() => setCloudHub("upload")} />
+            <Tool icon={<B.DriveIcon />} label="Drive" tip="Copia rapida nella cartella Drive del computer" onClick={() => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive")} />
+            <Tool icon={<B.OneDriveIcon />} label="OneDrv" tip="OneDrive" onClick={() => uploadCloud("OneDrive", "https://onedrive.live.com/")} />
+            <Tool icon={<B.ICloudIcon />} label="iCloud" onClick={() => uploadCloud("iCloud Drive", "https://www.icloud.com/iclouddrive/")} />
+            <Tool icon={<B.MailIcon />} label="Mail" onClick={() => mail()} />
+            <Tool icon={<B.WhatsAppIcon />} label="WApp" tip="WhatsApp" onClick={() => whatsapp()} />
+            <Tool icon={<B.AirDropIcon />} label="AirDrop" onClick={() => airdrop()} />
+            <Tool icon={<B.LocalSendIcon />} label="LSend" tip="LocalSend" onClick={() => topaz("LocalSend")} />
+            </>
+          )}
+        </Group>
+        </div></div>
+      </header>
+
+      {compare && <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-1"><span className="text-xs text-muted-foreground">Confronto A / B</span><Button variant="ghost" size="sm" onClick={closeAll}><X />Chiudi confronto</Button></div>}
+      <div className="flex min-h-0 flex-1 gap-3 p-3">
+        {toolsOpen && (
+          <DevelopPanel
+            adjust={adjust} setAdjust={setAdjust} hist={hist} hasImage={!!img}
+            onAutoWb={autoWb} onAutoExposure={autoExposure}
+            cropping={cropping} aspect={aspect} sheet={phone}
+            onAspect={aspectSel} onStartCrop={startCrop} onApplyCrop={applyCrop} onCancelCrop={cancelCrop} onResetCrop={() => { setCrop(null); setSel(null); setCropping(false); }}
+            onResetAll={() => { setAdjust(defaultAdjust); setCrop(null); setSel(null); setCropping(false); }}
+            onClose={() => setToolsOpen(false)}
+          />
+        )}
+        {/* Canvas */}
+        <div className="flex min-h-0 min-w-0 flex-1 gap-2">
+        {compare && active === "B" && comparePane("A", <ComparePane slot={other?.img ? { url: other?.snap ?? other?.img?.url ?? null, w: other?.img?.w ?? 1, h: other?.img?.h ?? 1, name: other?.img?.file.name ?? "" } : null} label="A" onActivate={swapActive} view={other?.img ? { scale: other.scale, off: other.off } : null} onView={paneView} />)}
+        {compare ? comparePane(active, renderMain()) : renderMain()}
+        {compare && active === "A" && comparePane("B", <ComparePane slot={other?.img ? { url: other.snap ?? other.img.url, w: other.img.w, h: other.img.h, name: other.img.file.name } : null} label="B" onActivate={swapActive} view={other?.img ? { scale: other.scale, off: other.off } : null} onView={paneView} />)}
         </div>
 
         {/* Side panel */}
@@ -1528,7 +1612,7 @@ export function LomaViewer() {
         </aside>
       </div>
 
-      {session.length > 0 && stripOpen && !(mob && view === "grid") && (
+      {!compare && session.length > 0 && stripOpen && !(mob && view === "grid") && (
         <Filmstrip
           items={visible} total={session.length} current={curId} filter={filter} setFilter={setFilter}
           onSelect={selectItem} onSendBatch={sendBatch} hideLock={mob}
@@ -1557,7 +1641,7 @@ export function LomaViewer() {
         </nav>
       )}
       {phone && moreOpen && <div className="fixed inset-0 z-40 bg-background/50" onClick={() => setMoreOpen(false)} />}
-      <input ref={fileInput} type="file" accept={ACCEPT} hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) openFile(f); e.target.value = ""; }} />
+      <input ref={fileInput} type="file" accept={ACCEPT} hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) { if (compare) void addCompareFiles([f], activeRef.current); else void openFile(f); } e.target.value = ""; }} />
       <input ref={multiInput} type="file" accept={ACCEPT} multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }} />
       <input
         ref={(el) => { folderInput.current = el; el?.setAttribute("webkitdirectory", ""); el?.setAttribute("directory", ""); }}
@@ -1588,7 +1672,7 @@ export function LomaViewer() {
           makeFiles={makeUploadFiles} />
       )}
       {cloudHub && (
-        <CloudHub mode={cloudHub} onClose={() => setCloudHub(null)} hasImage={!!img || multiFiles().length > 0} count={multiFiles().length > 1 ? multiFiles().length : 1}
+        <CloudHub mode={cloudHub} onClose={() => { cloudSide.current = null; setCloudHub(null); }} hasImage={!!img || multiFiles().length > 0} count={multiFiles().length > 1 ? multiFiles().length : 1}
           onQuickDesktop={typeof window !== "undefined" && (window as any).lomaDesktop ? () => uploadCloud("Google Drive", "https://drive.google.com/drive/my-drive") : undefined}
           onImport={(fs) => { const dt = new DataTransfer(); fs.forEach((f) => dt.items.add(f)); importRef.current(dt.files); }}
           makeFiles={makeUploadFiles}
