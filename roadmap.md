@@ -1,6 +1,7 @@
-- [ ] Center A/B graphics; move photos with mouse, touch and stylus.
-- [ ] Add LoMa Prompt and external photo + full-prompt sharing without internal AI.
-- [ ] Verify requested tablet workflows.
+- [x] Center A/B graphics; move photos with mouse, touch and stylus.
+- [x] Add LoMa Prompt logo/templates and external photo + full-prompt sharing without internal AI; local offline prompt edits.
+- [x] Verify tablet/phone/desktop prompt layout, real mouse/pen/touch transfers, prompt persistence, native bridge payload and 12 unit tests.
+- [ ] Verify photo + prompt reception in installed Android AI apps — requires new APK and physical device; receiving apps may ignore text, retained in native clipboard.
 - [x] Independent A/B collections, folder import on both sides, single-photo close/replacement and comparison exit.
 - [x] Verify A/B collections with tests and desktop/tablet browser flows.
 - [x] White track / blue thumb scrollbars in shared styles across platforms.

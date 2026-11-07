@@ -4,7 +4,7 @@ export type PromptTarget = { name: string; url: string; pkg: string };
 export const PROMPT_TARGETS: PromptTarget[] = [
   { name: "ChatGPT", url: "https://chatgpt.com/", pkg: "com.openai.chatgpt" },
   { name: "Gemini", url: "https://gemini.google.com/", pkg: "com.google.android.apps.bard" },
-  { name: "Meta AI", url: "https://www.meta.ai/", pkg: "com.facebook.stellar" },
+  { name: "Meta AI", url: "https://www.meta.ai/", pkg: "com.facebook.stella" },
 ];
 
 export function promptShareData(file: File, text: string): ShareData {
