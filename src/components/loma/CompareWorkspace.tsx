@@ -34,7 +34,7 @@ export function CompareWorkspace({ label, active, items, current, onImport, onCl
   const groups = [...new Set(items.map(item => item.folder || "Immagini"))];
   const chosenGroup = groups.includes(group) ? group : "";
   const shown = chosenGroup ? items.filter(item => (item.folder || "Immagini") === chosenGroup) : items;
-  return <section aria-label={`Confronto ${label}`} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-canvas">
+  return <section aria-label={`Confronto ${label}`} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); event.stopPropagation(); onImport(Array.from(event.dataTransfer.files)); }} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-canvas">
     <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border bg-toolbar px-2 py-1.5">
       <span className={`mr-auto text-xs font-semibold ${active ? "text-primary" : "text-muted-foreground"}`}>{label} · {items.length} foto</span>
       <Button variant="ghost" size="icon" title={`Aggiungi immagini a ${label}`} aria-label={`Aggiungi immagini a ${label}`} onClick={() => files.current?.click()}><Images /></Button>
