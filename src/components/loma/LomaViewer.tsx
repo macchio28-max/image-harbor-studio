@@ -983,7 +983,8 @@ export function LomaViewer() {
       try {
         const result = await sendPhotoPrompt(target, promptText, img ? await outputFile() : null, img ? promptPng : undefined);
         if (result === "cancelled") sonnerToast.dismiss(id);
-        else sonnerToast.success(result === "text" ? "Prompt copiato: allega la foto nella chat." : result === "both" ? "Foto e prompt copiati: incollali nella chat." : "Foto e prompt inviati all’app scelta.", { id, duration: 6000 });
+        else if (result === "image") sonnerToast.success("Foto copiata: incollala nella chat, poi premi “Copia prompt”.", { id, duration: 30000, action: { label: "Copia prompt", onClick: () => void navigator.clipboard.writeText(promptText) } });
+        else sonnerToast.success(result === "text" ? "Prompt copiato: allega la foto nella chat." : result === "prefill" ? "Prompt già inserito: incolla la foto (Cmd/Ctrl+V) nella chat." : "Foto e prompt inviati all’app scelta.", { id, duration: 6000 });
       } catch { sonnerToast.error("Invio di foto e prompt non riuscito", { id }); }
       return;
     }
