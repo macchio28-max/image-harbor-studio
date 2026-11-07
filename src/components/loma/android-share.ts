@@ -34,6 +34,15 @@ export async function androidShare(file: File, pkg?: string): Promise<boolean> {
   return (await upload(a, f, f.name, mimeOf(f))) ? !!(pkg && a.shareCommitTo ? a.shareCommitTo(upId, pkg) : a.shareCommit(upId)) : false;
 }
 
+/** Native photo + full prompt in one ACTION_SEND, without changing ordinary sharing. */
+export async function androidShareWithPrompt(file: File, text: string, pkg: string): Promise<boolean> {
+  const a = (window as any).LomaAndroid;
+  if (!a?.shareBegin || !a.shareCommitPrompt) return false;
+  const f = await toShareable(file);
+  if (!(await upload(a, f, f.name, mimeOf(f)))) return false;
+  return !!a.shareCommitPrompt(upId, pkg, text);
+}
+
 async function toShareable(file: File): Promise<File> {
   if (isCommon(file)) return file;
   try {
