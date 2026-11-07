@@ -8,6 +8,9 @@ import {
 } from "lucide-react";
 import { ChevronLeft, ChevronRight, Undo2, Redo2, MoreHorizontal, Server, Layers } from "lucide-react";
 import { CompositionDialog } from "./CompositionDialog";
+import { LomaPromptDialog } from "./LomaPromptDialog";
+import promptIcon from "@/assets/loma-prompt-icon.png.asset.json";
+import { sendPhotoPrompt, PROMPT_TARGETS } from "./prompt-share";
 import { type History, startHistory, commit, undo, redo } from "./edit-history";
 import { toast as sonnerToast } from "sonner";
 import { ConvertDialog } from "./ConvertDialog";
@@ -75,6 +78,8 @@ export function LomaViewer() {
   const [imgReady, setImgReady] = useState(0);
   const [topazOpen, setTopazOpen] = useState(false);
   const [convOpen, setConvOpen] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptText, setPromptText] = useState("");
   const [compositionOpen, setCompositionOpen] = useState(false);
   const [printSrc, setPrintSrc] = useState<string | null>(null);
   const [waAsk, setWaAsk] = useState(false);
@@ -402,7 +407,7 @@ export function LomaViewer() {
       while (next < added.length) {
         const item = added[next++]; if (!item) return;
         const result = await readCull(item.file, { light: true }).catch(() => ({}));
-        setCollections(previous => ({ ...previous, [side]: previous[side].map(photo => photo.id === item.id ? { ...photo, ...result } : photo) }));
+        setCollections(previous => ({ A: previous.A.map(photo => photo.id === item.id ? { ...photo, ...result } : photo), B: previous.B.map(photo => photo.id === item.id ? { ...photo, ...result } : photo) }));
       }
     };
     await Promise.all([worker(), worker(), worker()]);
@@ -726,7 +731,7 @@ export function LomaViewer() {
   // keyboard culling
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e) => {
-    if (compositionOpen) return;
+    if (compositionOpen || promptOpen) return;
     const t = e.target as HTMLElement;
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && (k === "z" || k === "y") && !t?.closest?.("textarea,[contenteditable],input[type=text]")) {
@@ -964,7 +969,24 @@ export function LomaViewer() {
       return true;
     } catch { return false; }
   };
+  const promptPng = async () => {
+    const source = imgEl.current;
+    if (!img || !source) throw new Error("No photo");
+    const blob = await renderClean(source, adjust, crop, "image/png");
+    return new File([blob], `${baseName(img.file.name)}.png`, { type: "image/png" });
+  };
   const openAI = async (name: string, url: string, pkg?: string) => {
+    if (promptText && PROMPT_TARGETS.some(target => target.name === name)) {
+      const target = PROMPT_TARGETS.find(target => target.name === name);
+      if (!target) return;
+      const id = sonnerToast.loading(`Apro ${name}…`);
+      try {
+        const result = await sendPhotoPrompt(target, promptText, img ? await outputFile() : null, img ? promptPng : undefined);
+        if (result === "cancelled") sonnerToast.dismiss(id);
+        else sonnerToast.success(result === "text" ? "Prompt copiato: allega la foto nella chat." : result === "both" ? "Foto e prompt copiati: incollali nella chat." : "Foto e prompt inviati all’app scelta.", { id, duration: 6000 });
+      } catch { sonnerToast.error("Invio di foto e prompt non riuscito", { id }); }
+      return;
+    }
     const mobile = isTouchDevice();
     if (img && pkg && (window as any).LomaAndroid?.shareCommitTo) {
       // Android APK: open the installed app directly with the photo attached.
@@ -1507,6 +1529,7 @@ export function LomaViewer() {
           <div className={canRedo ? "" : "pointer-events-none opacity-40"}><Tool icon={<Redo2 />} label="Ripeti" tip="Ripeti modifica (Ctrl+Y / ⌘+⇧+Z)" onClick={() => travel(1)} /></div>
         </Group>
         <Group>
+          <Tool icon={<img src={promptIcon.url} alt="" className="h-6 w-6 rounded-full" />} label="Prompt" tip="LoMa Prompt: foto e prompt per AI esterne" active={promptOpen} onClick={() => setPromptOpen(true)} />
           <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/", "com.openai.chatgpt")} />
           <Tool icon={<B.MetaAIIcon />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/", "com.facebook.stellar")} />
           <Tool icon={<B.GeminiIcon />} label="Gemini" onClick={() => openAI("Gemini", "https://gemini.google.com/", "com.google.android.apps.bard")} />
@@ -1678,6 +1701,7 @@ export function LomaViewer() {
         type="file" multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }}
       />
       {convOpen && <ConvertDialog current={img?.file ?? null} preview={img?.url ?? null} size={img ? { w: img.w, h: img.h } : null} session={session} visible={visible} onClose={() => setConvOpen(false)} />}
+      <LomaPromptDialog open={promptOpen} onClose={() => setPromptOpen(false)} getPhoto={img ? outputFile : undefined} getPng={img ? promptPng : undefined} onText={setPromptText} />
       <CompositionDialog open={compositionOpen} onClose={() => setCompositionOpen(false)}
         seedFiles={async () => {
           if (multiFiles().length > 1) return makeUploadFiles("clean");
