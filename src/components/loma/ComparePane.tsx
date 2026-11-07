@@ -13,7 +13,7 @@ export function ComparePane({ slot, label, onActivate, view, onView }: { slot: P
   const ref = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(view?.scale ?? 1);
   const [off, setOff] = useState(view?.off ?? { x: 0, y: 0 });
-  const kept = useRef(!!view);
+  const kept = useRef(!!view && !(view.scale === 1 && view.off.x === 0 && view.off.y === 0));
   useEffect(() => { onView?.({ scale, off }); }, [scale, off]); // eslint-disable-line react-hooks/exhaustive-deps
   const st = useRef({ scale, off });
   st.current = { scale, off };
