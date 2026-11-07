@@ -24,7 +24,7 @@ import { DevelopPanel } from "./DevelopPanel";
 import { Filmstrip } from "./Filmstrip";
 import { ComparePane } from "./ComparePane";
 import { CompareWorkspace } from "./CompareWorkspace";
-import { photoFolder, removeComparePhoto, type CompareItem } from "./compare-collection";
+import { COMPARE_DRAG_TYPE, moveComparePhoto, photoFolder, removeComparePhoto, type CompareSide, type CompareItem } from "./compare-collection";
 import { Button } from "@/components/ui/button";
 import { MailChoice, WEBMAIL_PRESETS, serviceOf, type MailAccount } from "./MailChoice";
 import { CloudHub } from "./CloudHub";
@@ -89,6 +89,7 @@ export function LomaViewer() {
   const stage = useRef<HTMLDivElement>(null);
   const imgEl = useRef<HTMLImageElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const penPointer = useRef<number | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<any>(null);
   const state = useRef({ scale, off });
@@ -437,8 +438,25 @@ export function LomaViewer() {
     }
     setView("loupe"); setStripOpen(false); setCompare(previous => !previous);
   };
+  const transferCompare = (from: CompareSide, to: CompareSide, id: string) => {
+    const before = collectionsRef.current;
+    const next = moveComparePhoto(before, from, to, id);
+    if (next === before) return;
+    const sourceCurrent = from === activeRef.current ? curId : other?.curId ?? null;
+    const replacement = removeComparePhoto(before[from], sourceCurrent, id).current;
+    loadGeneration.current[from]++; loadGeneration.current[to]++;
+    collectionsRef.current = next; setCollections(next);
+    if (sourceCurrent === id) {
+      if (from === activeRef.current) { setImg(null); setCurId(replacement); setAdjust(defaultAdjust); setCrop(null); setSel(null); }
+      else setOther(null);
+      if (replacement) pickCompare(from, replacement);
+    }
+    pickCompare(to, id);
+    setMulti(previous => { const result = new Set(previous); result.delete(id); return result; });
+    sonnerToast.success(`Foto spostata in ${to}`, { duration: QUICK_MS });
+  };
   const comparePane = (side: "A" | "B", children: ReactNode) => <CompareWorkspace key={side} label={side} active={active === side} items={collections[side]} current={active === side ? curId : other?.curId ?? null}
-    onImport={files => { void addCompareFiles(files, side); }} onPick={id => pickCompare(side, id)} onRemove={id => removeCompare(side, id)}
+    onTransfer={transferCompare} onImport={files => { void addCompareFiles(files, side); }} onPick={id => pickCompare(side, id)} onRemove={id => removeCompare(side, id)}
     onCloud={() => { cloudSide.current = side; setCloudHub("import"); }}>{children}</CompareWorkspace>;
 
   const importFiles = async (list: FileList | null) => {
@@ -749,6 +767,14 @@ export function LomaViewer() {
   }, []);
 
   useEffect(() => {
+    const element = stage.current;
+    if (!element || !img) return;
+    const observer = new ResizeObserver(() => fit());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [img, compare, active, fit]);
+
+  useEffect(() => {
     const onResize = () => img && fit();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
@@ -764,8 +790,10 @@ export function LomaViewer() {
   });
 
   const onDown = (e: React.PointerEvent) => {
-    if (!img) return;
-    (e.target as Element).setPointerCapture?.(e.pointerId);
+    if (!img || (e.target as HTMLElement).closest('button,input,select')) return;
+    if (e.pointerType === 'touch' && penPointer.current !== null) return;
+    if (e.pointerType === 'pen') { penPointer.current = e.pointerId; pointers.current.clear(); }
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     pointers.current.set(e.pointerId, local(e));
     const pts: { x: number; y: number }[] = [...pointers.current.values()] as any;
     if (pts.length === 2) {
@@ -798,6 +826,7 @@ export function LomaViewer() {
     }
   };
   const onUp = (e: React.PointerEvent) => {
+    if (penPointer.current === e.pointerId) penPointer.current = null;
     pointers.current.delete(e.pointerId);
     if (pointers.current.size === 0) gesture.current = null;
   };
@@ -1259,7 +1288,7 @@ export function LomaViewer() {
             const r = stage.current!.getBoundingClientRect();
             setZoom(0.5, e.clientX - r.left, e.clientY - r.top);
           }}
-          onTouchStart={(e) => { const t = e.touches[0]!; swipe.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null; }}
+          onTouchStart={(e) => { if (penPointer.current !== null) return; const t = e.touches[0]!; swipe.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null; }}
           onTouchEnd={(e) => {
             const s = swipe.current; swipe.current = null;
             if (!s || session.length < 2 || scale > fitScale.current * 1.02) return;
@@ -1271,6 +1300,7 @@ export function LomaViewer() {
           onDrop={(e) => {
             e.preventDefault();
             setDrag(false);
+            if (compare) return; // comparison workspace owns file and internal-photo drops
             const fs = e.dataTransfer.files;
             if (compare || fs.length > 1) importFiles(fs);
             else if (fs[0]) openFile(fs[0]);
