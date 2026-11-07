@@ -9,7 +9,7 @@ import { copyPhotoPrompt, sendPhotoPrompt, PROMPT_TARGETS, type PromptTarget } f
 
 const KEY = "loma.viewer.prompts.v1";
 export function LomaPromptDialog({ open, onClose, getPhoto, getPng, onText }: {
-  open: boolean; onClose: () => void; getPhoto?: () => Promise<File>; getPng?: () => Promise<File>; onText: (text: string) => void;
+  open: boolean; onClose: () => void; getPhoto: (() => Promise<File>) | undefined; getPng: (() => Promise<File>) | undefined; onText: (text: string) => void;
 }) {
   const [list, setList] = useState<LomaPrompt[]>(LOMA_PROMPTS);
   const [selected, setSelected] = useState("");
