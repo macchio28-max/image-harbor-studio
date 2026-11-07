@@ -30,7 +30,7 @@ export async function sendPhotoPrompt(target: PromptTarget, text: string, file: 
   // An older APK cannot attach EXTRA_TEXT: do not silently send the photo without the prompt.
   if (file && !(window as Window & { LomaAndroid?: unknown }).LomaAndroid && navigator.canShare?.(promptShareData(file, text))) {
     try { await navigator.share(promptShareData(file, text)); return "shared"; }
-    catch (error) { if (error instanceof Error && error.name === "AbortError") return "cancelled"; }
+    catch (error) { if (typeof error === "object" && error !== null && "name" in error && error.name === "AbortError") return "cancelled"; }
   }
   const result = await copyPhotoPrompt(text, png);
   const desktop = (window as Window & { lomaDesktop?: { openExternal: (url: string) => void } }).lomaDesktop;

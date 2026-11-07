@@ -18,6 +18,9 @@ export function ComparePane({ slot, label, onActivate, view, onView }: { slot: P
   const st = useRef({ scale, off });
   st.current = { scale, off };
   const g = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
+  const pen = useRef<number | null>(null);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ distance: number; scale: number; x: number; y: number; off: { x: number; y: number } } | null>(null);
 
   const fit = () => {
     const el = ref.current;
@@ -64,17 +67,38 @@ export function ComparePane({ slot, label, onActivate, view, onView }: { slot: P
       ref={ref}
       className="relative min-w-0 flex-1 cursor-grab touch-none overflow-hidden rounded-lg border border-border bg-canvas active:cursor-grabbing"
       onPointerDown={(e) => {
+        if (e.pointerType === "touch" && pen.current !== null) return;
+        if (e.pointerType === "pen") { pen.current = e.pointerId; pointers.current.clear(); }
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const points = [...pointers.current.values()];
+        const p = points[0], q = points[1];
+        if (p && q) {
+          const r = e.currentTarget.getBoundingClientRect();
+          pinch.current = { distance: Math.max(1, Math.hypot(p.x - q.x, p.y - q.y)), scale, off, x: (p.x + q.x) / 2 - r.left, y: (p.y + q.y) / 2 - r.top };
+          g.current = null; return;
+        }
         g.current = { sx: e.clientX, sy: e.clientY, ox: off.x, oy: off.y, moved: false };
       }}
       onPointerMove={(e) => {
+        if (!pointers.current.has(e.pointerId)) return;
+        pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const points = [...pointers.current.values()];
+        const p = points[0], q = points[1], zoom = pinch.current;
+        if (p && q && zoom) {
+          const r = e.currentTarget.getBoundingClientRect();
+          const next = Math.min(40, Math.max(0.02, zoom.scale * Math.hypot(p.x - q.x, p.y - q.y) / zoom.distance));
+          const k = next / zoom.scale;
+          setScale(next); setOff({ x: (p.x + q.x) / 2 - r.left - (zoom.x - zoom.off.x) * k, y: (p.y + q.y) / 2 - r.top - (zoom.y - zoom.off.y) * k }); return;
+        }
         const c = g.current;
         if (!c) return;
         const dx = e.clientX - c.sx, dy = e.clientY - c.sy;
         if (Math.abs(dx) + Math.abs(dy) > 4) c.moved = true;
         if (c.moved) setOff({ x: c.ox + dx, y: c.oy + dy });
       }}
-      onPointerUp={() => { const c = g.current; g.current = null; if (c && !c.moved) onActivate(); }}
+      onPointerUp={(e) => { if (!pointers.current.has(e.pointerId)) return; pointers.current.delete(e.pointerId); if (pen.current === e.pointerId) pen.current = null; const c = g.current; g.current = null; pinch.current = null; if (c && !c.moved) onActivate(); }}
+      onPointerCancel={(e) => { pointers.current.delete(e.pointerId); if (pen.current === e.pointerId) pen.current = null; g.current = null; pinch.current = null; }}
       onDoubleClick={fit}
       title="Clic per rendere attiva questa foto · rotellina zoom · trascina per spostare"
     >
