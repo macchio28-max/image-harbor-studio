@@ -349,6 +349,37 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception e) { Log.e(TAG, "shareCommitTo", e); return false; }
         }
 
+        // Sends a photo and the complete selected prompt together to an external AI app.
+        @JavascriptInterface
+        public boolean shareCommitPrompt(String id, String pkg, String text) {
+            File f; String mime;
+            closeOut(id); synchronized (outgoing) { f = outgoing.remove(id); mime = outMime.remove(id); }
+            if (f == null) return false;
+            try {
+                Uri uri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", f);
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType(mime == null ? "image/*" : mime);
+                send.putExtra(Intent.EXTRA_STREAM, uri);
+                send.putExtra(Intent.EXTRA_TEXT, text == null ? "" : text);
+                send.setClipData(ClipData.newRawUri(f.getName(), uri));
+                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                runOnUiThread(() -> {
+                    // Keep a second copy: some receiving apps ignore EXTRA_TEXT with images.
+                    if (text != null && !text.isEmpty()) {
+                        android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                        if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("LoMa Prompt", text));
+                    }
+                    if (pkg != null && !pkg.isEmpty()) {
+                        try { startActivity(new Intent(send).setPackage(pkg)); return; } catch (Exception e) { Log.i(TAG, "AI app unavailable; use chooser"); }
+                    }
+                    Intent chooser = Intent.createChooser(send, "Invia foto e prompt");
+                    chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                    try { startActivity(chooser); } catch (Exception e) { Log.e(TAG, "prompt chooser", e); }
+                });
+                return true;
+            } catch (Exception e) { Log.e(TAG, "shareCommitPrompt", e); return false; }
+        }
+
         // Sends several uploaded files at once (ACTION_SEND_MULTIPLE + ClipData); pkg optional, chooser fallback.
         @JavascriptInterface
         public boolean shareCommitMulti(String idsCsv, String pkg) {

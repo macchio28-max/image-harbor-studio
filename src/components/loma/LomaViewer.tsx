@@ -8,6 +8,9 @@ import {
 } from "lucide-react";
 import { ChevronLeft, ChevronRight, Undo2, Redo2, MoreHorizontal, Server, Layers } from "lucide-react";
 import { CompositionDialog } from "./CompositionDialog";
+import { LomaPromptDialog } from "./LomaPromptDialog";
+import promptIcon from "@/assets/loma-prompt-icon.png.asset.json";
+import { sendPhotoPrompt, PROMPT_TARGETS } from "./prompt-share";
 import { type History, startHistory, commit, undo, redo } from "./edit-history";
 import { toast as sonnerToast } from "sonner";
 import { ConvertDialog } from "./ConvertDialog";
@@ -24,7 +27,7 @@ import { DevelopPanel } from "./DevelopPanel";
 import { Filmstrip } from "./Filmstrip";
 import { ComparePane } from "./ComparePane";
 import { CompareWorkspace } from "./CompareWorkspace";
-import { photoFolder, removeComparePhoto, type CompareItem } from "./compare-collection";
+import { COMPARE_DRAG_TYPE, moveComparePhoto, photoFolder, removeComparePhoto, type CompareSide, type CompareItem } from "./compare-collection";
 import { Button } from "@/components/ui/button";
 import { MailChoice, WEBMAIL_PRESETS, serviceOf, type MailAccount } from "./MailChoice";
 import { CloudHub } from "./CloudHub";
@@ -75,6 +78,8 @@ export function LomaViewer() {
   const [imgReady, setImgReady] = useState(0);
   const [topazOpen, setTopazOpen] = useState(false);
   const [convOpen, setConvOpen] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptText, setPromptText] = useState("");
   const [compositionOpen, setCompositionOpen] = useState(false);
   const [printSrc, setPrintSrc] = useState<string | null>(null);
   const [waAsk, setWaAsk] = useState(false);
@@ -89,6 +94,7 @@ export function LomaViewer() {
   const stage = useRef<HTMLDivElement>(null);
   const imgEl = useRef<HTMLImageElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const penPointer = useRef<number | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<any>(null);
   const state = useRef({ scale, off });
@@ -401,7 +407,7 @@ export function LomaViewer() {
       while (next < added.length) {
         const item = added[next++]; if (!item) return;
         const result = await readCull(item.file, { light: true }).catch(() => ({}));
-        setCollections(previous => ({ ...previous, [side]: previous[side].map(photo => photo.id === item.id ? { ...photo, ...result } : photo) }));
+        setCollections(previous => ({ A: previous.A.map(photo => photo.id === item.id ? { ...photo, ...result } : photo), B: previous.B.map(photo => photo.id === item.id ? { ...photo, ...result } : photo) }));
       }
     };
     await Promise.all([worker(), worker(), worker()]);
@@ -437,8 +443,25 @@ export function LomaViewer() {
     }
     setView("loupe"); setStripOpen(false); setCompare(previous => !previous);
   };
+  const transferCompare = (from: CompareSide, to: CompareSide, id: string) => {
+    const before = collectionsRef.current;
+    const next = moveComparePhoto(before, from, to, id);
+    if (next === before) return;
+    const sourceCurrent = from === activeRef.current ? curId : other?.curId ?? null;
+    const replacement = removeComparePhoto(before[from], sourceCurrent, id).current;
+    loadGeneration.current[from]++; loadGeneration.current[to]++;
+    collectionsRef.current = next; setCollections(next);
+    if (sourceCurrent === id) {
+      if (from === activeRef.current) { setImg(null); setCurId(replacement); setAdjust(defaultAdjust); setCrop(null); setSel(null); }
+      else setOther(null);
+      if (replacement) pickCompare(from, replacement);
+    }
+    pickCompare(to, id);
+    setMulti(previous => { const result = new Set(previous); result.delete(id); return result; });
+    sonnerToast.success(`Foto spostata in ${to}`, { duration: QUICK_MS });
+  };
   const comparePane = (side: "A" | "B", children: ReactNode) => <CompareWorkspace key={side} label={side} active={active === side} items={collections[side]} current={active === side ? curId : other?.curId ?? null}
-    onImport={files => { void addCompareFiles(files, side); }} onPick={id => pickCompare(side, id)} onRemove={id => removeCompare(side, id)}
+    onTransfer={transferCompare} onImport={files => { void addCompareFiles(files, side); }} onPick={id => pickCompare(side, id)} onRemove={id => removeCompare(side, id)}
     onCloud={() => { cloudSide.current = side; setCloudHub("import"); }}>{children}</CompareWorkspace>;
 
   const importFiles = async (list: FileList | null) => {
@@ -708,7 +731,7 @@ export function LomaViewer() {
   // keyboard culling
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e) => {
-    if (compositionOpen) return;
+    if (compositionOpen || promptOpen) return;
     const t = e.target as HTMLElement;
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && (k === "z" || k === "y") && !t?.closest?.("textarea,[contenteditable],input[type=text]")) {
@@ -749,6 +772,14 @@ export function LomaViewer() {
   }, []);
 
   useEffect(() => {
+    const element = stage.current;
+    if (!element || !img) return;
+    const observer = new ResizeObserver(() => fit());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [img, compare, active, fit]);
+
+  useEffect(() => {
     const onResize = () => img && fit();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
@@ -764,8 +795,10 @@ export function LomaViewer() {
   });
 
   const onDown = (e: React.PointerEvent) => {
-    if (!img) return;
-    (e.target as Element).setPointerCapture?.(e.pointerId);
+    if (!img || (e.target as HTMLElement).closest('button,input,select')) return;
+    if (e.pointerType === 'touch' && penPointer.current !== null) return;
+    if (e.pointerType === 'pen') { penPointer.current = e.pointerId; pointers.current.clear(); }
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     pointers.current.set(e.pointerId, local(e));
     const pts: { x: number; y: number }[] = [...pointers.current.values()] as any;
     if (pts.length === 2) {
@@ -798,6 +831,7 @@ export function LomaViewer() {
     }
   };
   const onUp = (e: React.PointerEvent) => {
+    if (penPointer.current === e.pointerId) penPointer.current = null;
     pointers.current.delete(e.pointerId);
     if (pointers.current.size === 0) gesture.current = null;
   };
@@ -935,7 +969,24 @@ export function LomaViewer() {
       return true;
     } catch { return false; }
   };
+  const promptPng = async () => {
+    const source = imgEl.current;
+    if (!img || !source) throw new Error("No photo");
+    const blob = await renderClean(source, adjust, crop, "image/png");
+    return new File([blob], `${baseName(img.file.name)}.png`, { type: "image/png" });
+  };
   const openAI = async (name: string, url: string, pkg?: string) => {
+    if (promptText && PROMPT_TARGETS.some(target => target.name === name)) {
+      const target = PROMPT_TARGETS.find(target => target.name === name);
+      if (!target) return;
+      const id = sonnerToast.loading(`Apro ${name}…`);
+      try {
+        const result = await sendPhotoPrompt(target, promptText, img ? await outputFile() : null, img ? promptPng : undefined);
+        if (result === "cancelled") sonnerToast.dismiss(id);
+        else sonnerToast.success(result === "text" ? "Prompt copiato: allega la foto nella chat." : result === "both" ? "Foto e prompt copiati: incollali nella chat." : "Foto e prompt inviati all’app scelta.", { id, duration: 6000 });
+      } catch { sonnerToast.error("Invio di foto e prompt non riuscito", { id }); }
+      return;
+    }
     const mobile = isTouchDevice();
     if (img && pkg && (window as any).LomaAndroid?.shareCommitTo) {
       // Android APK: open the installed app directly with the photo attached.
@@ -1259,7 +1310,7 @@ export function LomaViewer() {
             const r = stage.current!.getBoundingClientRect();
             setZoom(0.5, e.clientX - r.left, e.clientY - r.top);
           }}
-          onTouchStart={(e) => { const t = e.touches[0]!; swipe.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null; }}
+          onTouchStart={(e) => { if (penPointer.current !== null) return; const t = e.touches[0]!; swipe.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null; }}
           onTouchEnd={(e) => {
             const s = swipe.current; swipe.current = null;
             if (!s || session.length < 2 || scale > fitScale.current * 1.02) return;
@@ -1271,6 +1322,7 @@ export function LomaViewer() {
           onDrop={(e) => {
             e.preventDefault();
             setDrag(false);
+            if (compare) return; // comparison workspace owns file and internal-photo drops
             const fs = e.dataTransfer.files;
             if (compare || fs.length > 1) importFiles(fs);
             else if (fs[0]) openFile(fs[0]);
@@ -1477,6 +1529,7 @@ export function LomaViewer() {
           <div className={canRedo ? "" : "pointer-events-none opacity-40"}><Tool icon={<Redo2 />} label="Ripeti" tip="Ripeti modifica (Ctrl+Y / ⌘+⇧+Z)" onClick={() => travel(1)} /></div>
         </Group>
         <Group>
+          <Tool icon={<img src={promptIcon.url} alt="" className="h-6 w-6 rounded-full" />} label="Prompt" tip="LoMa Prompt: foto e prompt per AI esterne" active={promptOpen} onClick={() => setPromptOpen(true)} />
           <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/", "com.openai.chatgpt")} />
           <Tool icon={<B.MetaAIIcon />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/", "com.facebook.stellar")} />
           <Tool icon={<B.GeminiIcon />} label="Gemini" onClick={() => openAI("Gemini", "https://gemini.google.com/", "com.google.android.apps.bard")} />
@@ -1648,6 +1701,7 @@ export function LomaViewer() {
         type="file" multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = ""; }}
       />
       {convOpen && <ConvertDialog current={img?.file ?? null} preview={img?.url ?? null} size={img ? { w: img.w, h: img.h } : null} session={session} visible={visible} onClose={() => setConvOpen(false)} />}
+      <LomaPromptDialog open={promptOpen} onClose={() => setPromptOpen(false)} getPhoto={img ? outputFile : undefined} getPng={img ? promptPng : undefined} onText={setPromptText} />
       <CompositionDialog open={compositionOpen} onClose={() => setCompositionOpen(false)}
         seedFiles={async () => {
           if (multiFiles().length > 1) return makeUploadFiles("clean");

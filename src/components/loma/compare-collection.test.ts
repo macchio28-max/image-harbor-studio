@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { photoFolder, removeComparePhoto, type CompareItem } from "./compare-collection";
+import { moveComparePhoto, photoFolder, removeComparePhoto, type CompareItem } from "./compare-collection";
 
 const item = (id: string): CompareItem => ({ id, file: new File([id], `${id}.jpg`), folder: id.startsWith("dx") ? "1Dx" : "R6", thumb: null, rating: 0, locked: false, flagged: false });
 describe("independent comparison collections", () => {
+  it("moves the same photo retaining its folder, tags and both panes' siblings", () => {
+    const photo = { ...item("dx1"), rating: 5, thumb: "blob:kept", locked: true };
+    const initial = { A: [photo, item("dx2")], B: [item("r61"), item("r62")] };
+    const moved = moveComparePhoto(initial, "A", "B", "dx1");
+    expect(moved.A.map(p => p.id)).toEqual(["dx2"]);
+    expect(moved.B.map(p => p.id)).toEqual(["r61", "r62", "dx1"]);
+    expect(moved.B[2]).toBe(photo);
+    expect(moved.B[2]?.folder).toBe("1Dx");
+    expect(moveComparePhoto(moved, "B", "B", "dx1")).toBe(moved);
+    expect(moveComparePhoto(initial, "A", "B", "missing")).toBe(initial);
+  });
   it("closes only the blurred 1Dx photo while retaining its sibling and both R6 photos", () => {
     const a = [item("dx1"), item("dx2")], b = [item("r61"), item("r62")];
     const next = removeComparePhoto(a, "dx1", "dx1");
