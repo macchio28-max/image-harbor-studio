@@ -30,6 +30,19 @@ export function ComparePane({ slot, label, onActivate, view, onView }: { slot: P
   useEffect(() => { if (kept.current) { kept.current = false; return; } requestAnimationFrame(fit); }, [slot?.url, slot?.w, slot?.h]); // keep the zoom it had while active
 
   useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    let width = element.clientWidth, height = element.clientHeight;
+    const observer = new ResizeObserver(() => {
+      if (element.clientWidth === width && element.clientHeight === height) return;
+      width = element.clientWidth; height = element.clientHeight;
+      fit();
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [slot?.url, slot?.w, slot?.h]);
+
+  useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const h = (e: WheelEvent) => {
