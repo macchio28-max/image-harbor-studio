@@ -6,7 +6,7 @@ import {
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
   FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, Repeat, LayoutGrid, Square, Printer, Share2,
 } from "lucide-react";
-import { ChevronLeft, ChevronRight, Undo2, Redo2, MoreHorizontal, Server, Layers } from "lucide-react";
+import { ChevronLeft, ChevronRight, Undo2, Redo2, MoreHorizontal, Server, Layers, SquarePen } from "lucide-react";
 import { CompositionDialog } from "./CompositionDialog";
 import { LomaPromptDialog } from "./LomaPromptDialog";
 import promptIcon from "@/assets/loma-prompt-icon.png.asset.json";
@@ -1271,6 +1271,37 @@ export function LomaViewer() {
     notify(path ? `Esportato. Aprilo con ${app} (${path}).` : `Esportato per ${app}. Imposta il percorso in "Percorsi".`);
   };
 
+  const sendToEdit = async () => {
+    if (!need()) return;
+    const t = sonnerToast.loading("Invio a LoMa EDIT…");
+    try {
+      const b = await renderClean(imgEl.current!, adjust, crop, "image/png");
+      const f = new File([b], `${baseName(img!.file.name)}.png`, { type: "image/png" });
+      if (isTouchDevice() || (window as any).LomaAndroid) {
+        // Tablet/mobile: system share sheet, pick LoMa EDIT.
+        if (await androidShare(f)) { sonnerToast.success("Scegli LoMa EDIT", { id: t, duration: QUICK_MS }); return; }
+        if (navigator.canShare?.({ files: [f] })) {
+          sonnerToast.dismiss(t);
+          try { await navigator.share({ files: [f], title: f.name }); } catch { /* annullato */ }
+          return;
+        }
+      }
+      const desk = (window as any).lomaDesktop;
+      const path = localStorage.getItem("loma.topaz.LoMa EDIT") || "";
+      if (desk?.launchWithData && path) {
+        const r = await desk.launchWithData(path, f.name, b);
+        if (r?.ok) { sonnerToast.success("Foto aperta in LoMa EDIT", { id: t, duration: QUICK_MS }); return; }
+      }
+      let copied = false;
+      try { copied = desk?.copyImage ? !!(await desk.copyImage(b)) : false; } catch { /* browser */ }
+      if (!copied) { try { await navigator.clipboard.write([new ClipboardItem({ "image/png": b })]); copied = true; } catch { /* no clipboard */ } }
+      const url = "https://loma-edit.lovable.app/";
+      if (desk?.openExternal) desk.openExternal(url); else window.open(url, "_blank", "noopener");
+      if (copied) sonnerToast.success("Foto copiata: in LoMa EDIT premi Cmd/Ctrl+V.", { id: t, duration: 6000 });
+      else { sonnerToast.dismiss(t); await exportClean("image/png", "_for_LoMaEDIT"); notify("Foto salvata: aprila in LoMa EDIT."); }
+    } catch { sonnerToast.error("Invio a LoMa EDIT non riuscito", { id: t }); }
+  };
+
   const startCrop = () => {
     if (!img) return;
     setCropping(true); setMode("select");
@@ -1531,6 +1562,7 @@ export function LomaViewer() {
         </Group>
         <Group>
           <Tool icon={<img src={promptIcon.url} alt="" className="h-6 w-6 rounded-full" />} label="Prompt" tip="LoMa Prompt: foto e prompt per AI esterne" active={promptOpen} onClick={() => setPromptOpen(true)} />
+          <Tool icon={<SquarePen className="text-primary" />} label="EDIT" tip="Invia la foto a LoMa EDIT" onClick={() => void sendToEdit()} />
           <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/", "com.openai.chatgpt")} />
           <Tool icon={<B.MetaAIIcon />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/", "com.facebook.stellar")} />
           <Tool icon={<B.GeminiIcon />} label="Gemini" onClick={() => openAI("Gemini", "https://gemini.google.com/", "com.google.android.apps.bard")} />
@@ -1810,7 +1842,7 @@ function isTouchDevice() {
 }
 
 function TopazSettings({ onClose }: { onClose: () => void }) {
-  const apps = ["Topaz Photo AI", "Topaz Gigapixel AI", "Adobe Photoshop", "Adobe Lightroom", "Adobe Lightroom Classic", "WhatsApp", "LocalSend", "Mail"];
+  const apps = ["LoMa EDIT", "Topaz Photo AI", "Topaz Gigapixel AI", "Adobe Photoshop", "Adobe Lightroom", "Adobe Lightroom Classic", "WhatsApp", "LocalSend", "Mail"];
   const [mailMode, setMailMode] = useState(() => localStorage.getItem("loma.mail.mode") || "");
   const [mailUrl, setMailUrl] = useState(() => localStorage.getItem("loma.mail.url") || "");
   const [waMode, setWaMode] = useState(() => localStorage.getItem("loma.wa.mode") || "");
