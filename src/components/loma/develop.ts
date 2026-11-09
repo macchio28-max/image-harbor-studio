@@ -24,6 +24,8 @@ export type Adjust = {
   cbShadows: Tone; cbMid: Tone; cbHigh: Tone;
   hsl: Record<HslCh, Hsl>;
   sharpAmount: number; sharpRadius: number;
+  /** Sharpening mask 0..100: higher values restrict sharpening to edges (protects flat areas/noise). */
+  sharpMask: number;
   nrLum: number; nrColor: number;
 };
 
@@ -39,7 +41,7 @@ export const defaultAdjust: Adjust = {
   vigAmount: 0, vigMethod: "elliptic",
   cbShadows: { h: 0, a: 0 }, cbMid: { h: 0, a: 0 }, cbHigh: { h: 0, a: 0 },
   hsl: zeroHsl(),
-  sharpAmount: 0, sharpRadius: 1, nrLum: 0, nrColor: 0,
+  sharpAmount: 0, sharpRadius: 1, sharpMask: 0, nrLum: 0, nrColor: 0,
 };
 
 export const WB_PRESETS: Record<Exclude<WbMode, "auto" | "custom">, number> = {
@@ -186,6 +188,7 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
   const vig = a.vigAmount;
   const nrL = a.nrLum / 100 * 0.85, nrC = a.nrColor / 100;
   const shA = a.sharpAmount / 100 * 2;
+  const mTh = (a.sharpMask ?? 0) / 100 * 0.12;
   const clar = a.clarity / 100 * 0.8, str = (a.structure + a.texture) / 100 * 1.2;
   const vib = a.vibrance / 100;
   const hist: any = wantHist ? [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)] : null;
@@ -283,7 +286,11 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
       }
 
       if (bSharp) {
-        r += (r0 - bSharp[i] / 255) * shA; g += (g0 - bSharp[i + 1] / 255) * shA; b += (b0 - bSharp[i + 2] / 255) * shA;
+        const er = r0 - bSharp[i] / 255, eg = g0 - bSharp[i + 1] / 255, eb = b0 - bSharp[i + 2] / 255;
+        // Masking: weight by local edge strength so flat areas (sky, skin) stay smooth.
+        const mw = mTh > 0 ? sstep(mTh * 0.3, mTh, Math.abs(0.2126 * er + 0.7152 * eg + 0.0722 * eb)) : 1;
+        const k = shA * mw;
+        r += er * k; g += eg * k; b += eb * k;
       }
 
       if (op < 1) { r = r0 + (r - r0) * op; g = g0 + (g - g0) * op; b = b0 + (b - b0) * op; }

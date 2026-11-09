@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import {
   RotateCcw, RotateCw, Wand2, FlipHorizontal, FlipVertical, Crop as CropIcon, Pipette, X, Check,
-  Sun, Contrast, SunMoon, CircleDot, Spline, BarChart3, Thermometer, Droplet, Disc3, Grip, Sparkles, CloudFog, Aperture,
+  Sun, Contrast, SunMoon, CircleDot, Spline, BarChart3, Thermometer, Droplet, Disc3, Grip, Sparkles, CloudFog, Aperture, Focus,
   ChevronUp, ChevronDown,
 } from "lucide-react";
 import { type Adjust, defaultAdjust, monotoneSpline, WB_PRESETS, type WbMode, type Tone } from "./develop";
@@ -13,7 +13,7 @@ type ToolId =
   | "cut" | "orient"
   | "exposure" | "contrast" | "lights" | "wb2" | "curves" | "levels"
   | "wb" | "vib" | "wheels"
-  | "texture" | "clarity" | "dehaze" | "vig";
+  | "texture" | "clarity" | "dehaze" | "vig" | "detail";
 
 const AREAS: { id: AreaId; label: string; tools: { id: ToolId; label: string; I: any; keys: (keyof Adjust)[] }[] }[] = [
   { id: "crop", label: "Ritaglio", tools: [
@@ -37,6 +37,7 @@ const AREAS: { id: AreaId; label: string; tools: { id: ToolId; label: string; I:
     { id: "texture", label: "Texture", I: Grip, keys: ["texture"] },
     { id: "clarity", label: "Chiarezza", I: Sparkles, keys: ["clarity"] },
     { id: "dehaze", label: "Foschia", I: CloudFog, keys: ["dehaze"] },
+    { id: "detail", label: "Dettaglio / Nitidezza", I: Focus, keys: ["sharpAmount", "sharpRadius", "sharpMask", "nrLum", "nrColor"] },
     { id: "vig", label: "Vignettatura", I: Aperture, keys: ["vigAmount", "vigMethod"] },
   ] },
 ];
@@ -138,6 +139,16 @@ export function DevelopPanel(props: {
       case "texture": return S("Texture", "texture", -100, 100);
       case "clarity": return S("Chiarezza", "clarity", -100, 100);
       case "dehaze": return S("Rimozione foschia", "dehaze", -100, 100);
+      case "detail": return (
+        <>
+          {S("Fattore", "sharpAmount", 0, 150)}
+          {S("Raggio", "sharpRadius", 0.5, 3, 0.1)}
+          {S("Mascheratura", "sharpMask", 0, 100)}
+          {S("Riduci disturbo", "nrLum", 0, 100)}
+          {S("Disturbo colore", "nrColor", 0, 100)}
+          <Hint>Ingrandisci al 100% per valutare. La mascheratura limita la nitidezza ai bordi e protegge cielo e pelle.</Hint>
+        </>
+      );
       case "vig": return (
         <>
           {S("Quantità", "vigAmount", -3, 3, 0.01)}
