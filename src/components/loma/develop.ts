@@ -333,7 +333,7 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
     for (let y = 0; y < h; y++) {
       const my = Math.min(mk.h - 1, ((y + oy) * sy) | 0) * mk.w;
       for (let x = 0; x < w; x++) {
-        const m = mk.data[(my + Math.min(mk.w - 1, ((x + ox) * sx) | 0)) * 4 + 3] / 255;
+        const m = (mk.data[(my + Math.min(mk.w - 1, ((x + ox) * sx) | 0)) * 4 + 3] ?? 0) / 255;
         if (m === 0) continue;
         const i = (y * w + x) * 4;
         let r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
