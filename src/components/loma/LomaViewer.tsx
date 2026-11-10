@@ -280,7 +280,7 @@ export function LomaViewer() {
       // RAW previews carry no orientation of their own: apply the camera's Orientation tag (vertical shots).
       try {
         const { readRawExif } = await import("./raw-exif");
-        const o = Number(readRawExif(new Uint8Array(await file.slice(0, Math.min(file.size, 1024 * 1024)).arrayBuffer())).Orientation) || 1;
+        const o = Number(readRawExif(new Uint8Array(await file.slice(0, Math.min(file.size, 1024 * 1024)).arrayBuffer()))["Orientation"]) || 1;
         if (o > 1 && url.startsWith("blob:")) {
           const src = await (await fetch(url)).blob();
           let own = 1;
