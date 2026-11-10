@@ -277,6 +277,21 @@ export function LomaViewer() {
         const th = await exifr0.thumbnail(file);
         if (th) url = URL.createObjectURL(new Blob([th as BlobPart], { type: "image/jpeg" }));
       } catch { /* keep original */ }
+      // RAW previews carry no orientation of their own: apply the camera's Orientation tag (vertical shots).
+      try {
+        const { readRawExif } = await import("./raw-exif");
+        const o = Number(readRawExif(new Uint8Array(await file.slice(0, Math.min(file.size, 1024 * 1024)).arrayBuffer())).Orientation) || 1;
+        if (o > 1 && url.startsWith("blob:")) {
+          const src = await (await fetch(url)).blob();
+          let own = 1;
+          try { own = Number(await (await import("exifr")).default.orientation(src)) || 1; } catch { /* none */ }
+          if (own <= 1) {
+            const { uprightBlob } = await import("./orient");
+            const up = await uprightBlob(src, o);
+            if (up !== src) { URL.revokeObjectURL(url); url = URL.createObjectURL(up); }
+          }
+        }
+      } catch { /* keep as is */ }
     }
     const probe = new Image();
     probe.decoding = "async";
@@ -1439,6 +1454,27 @@ export function LomaViewer() {
   const m: any = img?.meta ?? {};
   const lat = m.latitude as number | undefined, lon = m.longitude as number | undefined;
   const transform = `translate(${off.x}px, ${off.y}px) scale(${scale})`;
+  // Ruota 90° / Rifletti are baked into real pixels: no ghost overlay, crop and copy stay upright.
+  useEffect(() => {
+    const el = imgEl.current;
+    if (!img || !el || !el.complete || !el.naturalWidth) return;
+    const deg = ((adjust.rotation % 360) + 360) % 360;
+    if (!deg && !adjust.flipH && !adjust.flipV) return;
+    let dead = false;
+    void (async () => {
+      const { orientCanvas, canvasBlob } = await import("./orient");
+      const c = orientCanvas(el, el.naturalWidth, el.naturalHeight, deg, adjust.flipH, adjust.flipV);
+      const blob = await canvasBlob(c, "image/png");
+      if (dead) return;
+      const url = URL.createObjectURL(blob);
+      if (adjust.mask.id) MASKS.delete(adjust.mask.id);
+      setAdjust((a) => ({ ...a, rotation: 0, flipH: false, flipV: false, mask: emptyMask }));
+      setCrop(null); setSel(null); setCropping(false);
+      setImg((cur) => cur ? { ...cur, url, w: c.width, h: c.height } : cur);
+      requestAnimationFrame(() => fit(c.width, c.height));
+    })();
+    return () => { dead = true; };
+  }, [adjust.rotation, adjust.flipH, adjust.flipV, img, imgReady]); // eslint-disable-line react-hooks/exhaustive-deps
   const imgStyle = (filtered: boolean): React.CSSProperties => ({
     width: img?.w, height: img?.h, transformOrigin: "0 0", transform,
     imageRendering: scale >= 2 ? "pixelated" : "auto",
@@ -1534,7 +1570,7 @@ export function LomaViewer() {
           ) : (
             <>
               <div className="absolute inset-0" >
-                <img src={img.url} alt="" draggable={false} className="absolute left-0 top-0 max-w-none" style={{ ...imgStyle(false), ...(crop && !cropping ? { visibility: "hidden" } : {}) }} />
+                <img src={img.url} alt="" draggable={false} className="absolute left-0 top-0 max-w-none" style={{ ...imgStyle(false), ...((crop && !cropping) || adjust.straighten ? { visibility: "hidden" } : {}) }} />
               </div>
               <div className="absolute inset-0" >
                 <div className="absolute left-0 top-0" style={{ width: img.w, height: img.h, transformOrigin: "0 0", transform, clipPath: crop && !cropping ? `inset(${crop.y}px ${img.w - crop.x - crop.w}px ${img.h - crop.y - crop.h}px ${crop.x}px)` : undefined }}>
