@@ -89,7 +89,7 @@ export function LomaViewer() {
   const [compositionExtra, setCompositionExtra] = useState<{ file: File; opacity: number; key: number } | null>(null);
   const [brush, setBrush] = useState<BrushState>({ on: false, erase: false, size: 60, overlay: false });
   const maskCv = useRef<HTMLCanvasElement>(null);
-  const stroke = useRef<{ x: number; y: number; raf: number } | null>(null);
+  const stroke = useRef<{ x: number; y: number; raf: number; c: HTMLCanvasElement } | null>(null);
   const [printSrc, setPrintSrc] = useState<string | null>(null);
   const [waAsk, setWaAsk] = useState(false);
   const [mailAsk, setMailAsk] = useState(false);
@@ -807,7 +807,7 @@ export function LomaViewer() {
     const c = maskRaster(); if (!c) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     const x = e.nativeEvent.offsetX, y = e.nativeEvent.offsetY;
-    stroke.current = { x, y, raf: 0 }; dab(c, x, y, x, y); bumpMask();
+    stroke.current = { x, y, raf: 0, c }; dab(c, x, y, x, y); bumpMask();
   };
   const bumpMask = () => {
     const st = stroke.current; if (!st || st.raf) return;
@@ -816,7 +816,7 @@ export function LomaViewer() {
   const brushMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const st = stroke.current; if (!st) return;
     e.stopPropagation();
-    const c = adjust.mask.id ? MASKS.get(adjust.mask.id) : maskRaster(); if (!c) return;
+    const c = st.c;
     const x = e.nativeEvent.offsetX, y = e.nativeEvent.offsetY;
     dab(c, st.x, st.y, x, y); st.x = x; st.y = y; bumpMask();
   };
