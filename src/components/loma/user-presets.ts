@@ -1,7 +1,7 @@
 import { type Adjust, defaultAdjust } from './develop';
 
 export const PRESET_KEY = 'loma.develop.user-presets.v1';
-const GEOMETRY = new Set(['rotation', 'flipH', 'flipV', 'straighten']);
+const GEOMETRY = new Set(['rotation', 'flipH', 'flipV', 'straighten', 'mask']);
 export type UserPreset = { id: string; name: string; favorite: boolean; values: Partial<Adjust> };
 
 /** Store tone/detail settings only: presets never replace the current photo's geometry. */

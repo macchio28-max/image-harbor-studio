@@ -1,3 +1,4 @@
+import { superResolve } from "./detail-ai";
 import { stripBlob } from "./sanitize";
 import { type Adjust, defaultAdjust, developCanvas, isNeutral } from "./develop";
 export { type Adjust, defaultAdjust };
@@ -15,7 +16,9 @@ export async function renderClean(
   src.width = sw; src.height = sh;
   src.getContext("2d")!.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
   // Neutral settings: skip the pixel pipeline (big speed-up for Pulisci/Salva).
-  const dev = isNeutral(adjust) ? src : developCanvas(src, sw, sh, adjust, 1).canvas;
+  const developed = isNeutral(adjust) ? src : developCanvas(src, sw, sh, adjust, 1, false, { fullW: img.naturalWidth, fullH: img.naturalHeight, ox: sx, oy: sy }).canvas;
+  // Super Risoluzione is applied only here (export), after development.
+  const dev = adjust.srScale > 1 ? superResolve(developed, adjust.srScale, adjust.srProfile).canvas : developed;
   if (dev === src && !adjust.rotation && !adjust.straighten && !adjust.flipH && !adjust.flipV) {
     const raw0 = await new Promise<Blob>((res, rej) => src.toBlob((b) => (b ? res(b) : rej(new Error("export"))), type, 0.97));
     return stripBlob(raw0);

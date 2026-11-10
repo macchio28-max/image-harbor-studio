@@ -338,7 +338,7 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
         const i = (y * w + x) * 4;
         let r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
         if (me) { const k = Math.pow(2, me * m); r = exposeChannel(r, k); g = exposeChannel(g, k); b = exposeChannel(b, k); }
-        if (mb) { const k = mb * m * 0.3; r += k * (1 - r); g += k * (1 - g); b += k * (1 - b); if (k < 0) { r = d[i] / 255 * (1 + k); } }
+        if (mb) { const k = mb * m * 0.4; if (k > 0) { r += k * (1 - r); g += k * (1 - g); b += k * (1 - b); } else { r *= 1 + k; g *= 1 + k; b *= 1 + k; } }
         if (mc) { const k = 1 + mc * m; r = 0.5 + (r - 0.5) * k; g = 0.5 + (g - 0.5) * k; b = 0.5 + (b - 0.5) * k; }
         if (ms) { const Y = 0.2126 * r + 0.7152 * g + 0.0722 * b, k = 1 + ms * m; r = Y + (r - Y) * k; g = Y + (g - Y) * k; b = Y + (b - Y) * k; }
         d[i] = clamp01(r) * 255 + 0.5; d[i + 1] = clamp01(g) * 255 + 0.5; d[i + 2] = clamp01(b) * 255 + 0.5;
