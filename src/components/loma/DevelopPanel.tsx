@@ -6,6 +6,10 @@ import {
 } from "lucide-react";
 import { type Adjust, defaultAdjust, monotoneSpline, WB_PRESETS, type WbMode, type Tone } from "./develop";
 import { UserPresets } from "./UserPresets";
+import { DetailAi } from "./DetailAi";
+import { Brush, Eraser, Eye, EyeOff, Trash2 } from "lucide-react";
+
+export type BrushState = { on: boolean; erase: boolean; size: number; overlay: boolean };
 
 type SetA = (f: (a: Adjust) => Adjust) => void;
 type AreaId = "crop" | "exp" | "color" | "fx";
@@ -13,7 +17,7 @@ type ToolId =
   | "cut" | "orient"
   | "exposure" | "contrast" | "lights" | "wb2" | "curves" | "levels"
   | "wb" | "vib" | "wheels"
-  | "texture" | "clarity" | "dehaze" | "vig" | "detail";
+  | "texture" | "clarity" | "dehaze" | "vig" | "detail" | "mask";
 
 const AREAS: { id: AreaId; label: string; tools: { id: ToolId; label: string; I: any; keys: (keyof Adjust)[] }[] }[] = [
   { id: "crop", label: "Ritaglio", tools: [
@@ -37,7 +41,8 @@ const AREAS: { id: AreaId; label: string; tools: { id: ToolId; label: string; I:
     { id: "texture", label: "Texture", I: Grip, keys: ["texture"] },
     { id: "clarity", label: "Chiarezza", I: Sparkles, keys: ["clarity"] },
     { id: "dehaze", label: "Foschia", I: CloudFog, keys: ["dehaze"] },
-    { id: "detail", label: "Dettaglio / Nitidezza", I: Focus, keys: ["sharpAmount", "sharpRadius", "sharpMask", "nrLum", "nrColor"] },
+    { id: "detail", label: "Dettaglio / Nitidezza", I: Focus, keys: ["sharpAmount", "sharpRadius", "sharpMask", "nrLum", "nrColor", "portraitSkin", "portraitEyes", "natureAmount", "aiNr", "aiNrDetail", "srScale", "srProfile"] },
+    { id: "mask", label: "Maschera pennello", I: Brush, keys: ["mask"] },
     { id: "vig", label: "Vignettatura", I: Aperture, keys: ["vigAmount", "vigMethod"] },
   ] },
 ];
@@ -52,6 +57,9 @@ export function DevelopPanel(props: {
   onResetAll: () => void; onClose: () => void;
   /** Phone: floating resizable bottom sheet instead of a side column. */
   sheet?: boolean;
+  /** Full-resolution developed + cropped photo, for the 1:1 Super Risoluzione inspector. */
+  getFull?: (() => HTMLCanvasElement | null) | undefined;
+  brush: BrushState; setBrush: (b: BrushState) => void; onClearMask: () => void;
 }) {
   const { adjust: a, setAdjust } = props;
   const [area, setArea] = useState<AreaId>("exp");
@@ -140,15 +148,34 @@ export function DevelopPanel(props: {
       case "clarity": return S("Chiarezza", "clarity", -100, 100);
       case "dehaze": return S("Rimozione foschia", "dehaze", -100, 100);
       case "detail": return (
-        <>
+        <DetailAi a={a} set={(p) => setAdjust((x) => ({ ...x, ...p }))} S={S} getFull={props.getFull} classic={<>
           {S("Fattore", "sharpAmount", 0, 150)}
           {S("Raggio", "sharpRadius", 0.5, 3, 0.1)}
           {S("Mascheratura", "sharpMask", 0, 100)}
           {S("Riduci disturbo", "nrLum", 0, 100)}
           {S("Disturbo colore", "nrColor", 0, 100)}
           <Hint>Ingrandisci al 100% per valutare. La mascheratura limita la nitidezza ai bordi e protegge cielo e pelle.</Hint>
-        </>
+        </>} />
       );
+      case "mask": {
+        const b = props.brush, m = a.mask;
+        const M = (label: string, k: "exposure" | "contrast" | "saturation" | "brightness", min: number, max: number, step = 1) => (
+          <Slider label={label} value={m[k]} min={min} max={max} step={step} def={0} onChange={(v) => setAdjust((x) => ({ ...x, mask: { ...x.mask, [k]: v } }))} />
+        );
+        return (
+          <>
+            <div className="grid grid-cols-3 gap-1.5">
+              <Big I={Brush} l="Pennello" on={b.on && !b.erase} onClick={() => props.setBrush({ ...b, on: !(b.on && !b.erase), erase: false })} />
+              <Big I={Eraser} l="Gomma" on={b.on && b.erase} onClick={() => props.setBrush({ ...b, on: !(b.on && b.erase), erase: true })} />
+              <Big I={b.overlay ? Eye : EyeOff} l={b.overlay ? "Nascondi overlay" : "Mostra overlay"} on={b.overlay} onClick={() => props.setBrush({ ...b, overlay: !b.overlay })} />
+            </div>
+            <Slider label="Dimensione pennello" value={b.size} min={5} max={400} def={60} onChange={(v) => props.setBrush({ ...b, size: v })} />
+            {M("Esposizione", "exposure", -3, 3, 0.01)}{M("Luminosità", "brightness", -100, 100)}{M("Contrasto", "contrast", -100, 100)}{M("Saturazione", "saturation", -100, 100)}
+            <button onClick={props.onClearMask} className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-border py-1.5 text-xs text-destructive hover:bg-accent"><Trash2 className="h-3.5 w-3.5 shrink-0" />Elimina maschera</button>
+            <Hint>Dipingi sulla foto con dito, penna o mouse. L'overlay rosso resta nascosto mentre dipingi: attivalo solo se vuoi vedere la zona coperta.</Hint>
+          </>
+        );
+      }
       case "vig": return (
         <>
           {S("Quantità", "vigAmount", -3, 3, 0.01)}
