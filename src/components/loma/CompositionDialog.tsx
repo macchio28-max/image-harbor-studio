@@ -9,8 +9,10 @@ import { download } from './viewer-utils';
 import { startHistory, commit, undo, redo } from './edit-history';
 
 const INITIAL: Composition = { width: 1920, height: 1080, layers: [] };
-export function CompositionDialog({ open, onClose, seedFiles, onComplete }: {
+export function CompositionDialog({ open, onClose, seedFiles, onComplete, extra }: {
   open: boolean; onClose: () => void; seedFiles: () => Promise<File[]>; onComplete: (file: File) => void;
+  /** Pasted image to add on top (Livello AI) with its starting opacity. */
+  extra?: { file: File; opacity: number; key: number } | null;
 }) {
   const [history, setHistory] = useState(() => startHistory(INITIAL));
   const doc = history.present;
@@ -27,32 +29,42 @@ export function CompositionDialog({ open, onClose, seedFiles, onComplete }: {
   const change = (next: Composition) => setHistory(h => commit(h, next));
   const patch = (values: Partial<Layer>) => change({ ...doc, layers: doc.layers.map(l => l.id === selected ? { ...l, ...values } : l) });
 
-  async function addPhotos(files: File[], initial = false) {
+  async function addPhotos(files: File[], initial = false, opts?: { opacity: number; name: string }) {
     setBusy(true);
-    const layers: Layer[] = [];
-    let w = doc.width, h = doc.height;
+    const decoded: { file: File; bitmap: ImageBitmap; id: string }[] = [];
     try {
       for (const file of files) {
-        try {
-          const bitmap = await decodeSource(file);
-          if ((initial || !doc.layers.length) && !layers.length) { w = bitmap.width; h = bitmap.height; }
-          const l = { ...newLayer('photo', w, h), name: file.name, width: bitmap.width, height: bitmap.height,
-            scale: Math.min(1, w / bitmap.width, h / bitmap.height) };
-          l.asset = l.id; assets.current.set(l.id, bitmap); layers.push(l);
-        } catch { toast.error(`Impossibile aprire ${file.name}`); }
+        try { decoded.push({ file, bitmap: await decodeSource(file), id: crypto.randomUUID() }); }
+        catch { toast.error(`Impossibile aprire ${file.name}`); }
         await new Promise(r => setTimeout(r, 0));
       }
-      if (layers.length) {
-        setHistory(his => commit(his, { width: w, height: h, layers: [...his.present.layers, ...layers] }));
-        select(layers.at(-1)?.id ?? null);
+      if (decoded.length) {
+        setHistory(his => {
+          const base = initial || !his.present.layers.length;
+          const w = base ? decoded[0]!.bitmap.width : his.present.width, h = base ? decoded[0]!.bitmap.height : his.present.height;
+          const layers = decoded.map(({ file, bitmap, id }) => {
+            const l: Layer = { ...newLayer('photo', w, h), id, asset: id, name: opts?.name ?? file.name, width: bitmap.width, height: bitmap.height,
+              scale: Math.min(w / bitmap.width, h / bitmap.height, opts ? Infinity : 1), opacity: opts?.opacity ?? 100 };
+            assets.current.set(id, bitmap); return l;
+          });
+          return commit(his, { width: w, height: h, layers: [...his.present.layers, ...layers] });
+        });
+        select(decoded.at(-1)!.id);
       }
     } finally { setBusy(false); }
   }
+  const ready = useRef<Promise<unknown> | null>(null);
+  useEffect(() => {
+    if (!open || !extra) return;
+    const run = () => addPhotos([extra.file], false, { opacity: extra.opacity, name: 'Livello AI' });
+    const t = setTimeout(() => void (ready.current ?? Promise.resolve()).then(run, run), 0); // after the seed effect
+    return () => clearTimeout(t);
+  }, [extra?.key]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!open || seeded.current) return;
     seeded.current = true;
     setBusy(true);
-    void seedFiles().then(files => addPhotos(files, true)).catch(() => { setBusy(false); toast.error('Impossibile aprire le foto selezionate.'); });
+    ready.current = seedFiles().then(files => addPhotos(files, true)).catch(() => { setBusy(false); toast.error('Impossibile aprire le foto selezionate.'); });
   }, [open]); // Initial seed only; edits survive dialog closing.
   useEffect(() => {
     const el = frame; if (!open || !el) return;
@@ -127,6 +139,7 @@ export function CompositionDialog({ open, onClose, seedFiles, onComplete }: {
             {[...doc.layers].reverse().map(l => <div key={l.id} className={`flex items-center gap-1 rounded ${selected === l.id ? 'bg-accent' : ''}`}>
               <Button size="sm" variant="ghost" className="min-w-0 flex-1 justify-start" disabled={busy} onClick={() => select(l.id)}><span className="truncate">{l.name}</span></Button>
               <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" title={`Visibilità: ${l.name}`} aria-label={`Visibilità: ${l.name}`} disabled={busy} onClick={() => change({ ...doc, layers: doc.layers.map(x => x.id === l.id ? { ...x, visible: !x.visible } : x) })}>{l.visible ? <Eye /> : <EyeOff />}</Button>
+              <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-destructive hover:text-destructive" title={`Elimina: ${l.name}`} aria-label={`Elimina: ${l.name}`} disabled={busy} onClick={() => { change({ ...doc, layers: doc.layers.filter(x => x.id !== l.id) }); if (selected === l.id) select(null); }}><Trash2 /></Button>
             </div>)}
           </div>
           {active && <fieldset disabled={busy} className="space-y-2">
@@ -135,7 +148,7 @@ export function CompositionDialog({ open, onClose, seedFiles, onComplete }: {
               <Button size="icon" variant="ghost" title="Porta sopra" aria-label="Porta sopra" onClick={() => reorder(1)} disabled={doc.layers.at(-1)?.id === selected}><ArrowUp /></Button>
               <Button size="icon" variant="ghost" title="Porta sotto" aria-label="Porta sotto" onClick={() => reorder(-1)} disabled={doc.layers[0]?.id === selected}><ArrowDown /></Button>
               <Button size="icon" variant="ghost" title="Duplica livello" aria-label="Duplica livello" onClick={() => { const l = { ...active, id: crypto.randomUUID(), name: `${active.name} copia`, x: active.x + 20, y: active.y + 20 }; change({ ...doc, layers: [...doc.layers, l] }); select(l.id); }}><Copy /></Button>
-              <Button size="icon" variant="ghost" title="Elimina livello" aria-label="Elimina livello" onClick={() => { change({ ...doc, layers: doc.layers.filter(l => l.id !== selected) }); select(null); }}><Trash2 /></Button>
+              <Button size="icon" variant="ghost" className="shrink-0 text-destructive hover:text-destructive" title="Elimina livello" aria-label="Elimina livello" onClick={() => { change({ ...doc, layers: doc.layers.filter(l => l.id !== selected) }); select(null); }}><Trash2 /></Button>
             </div>
             <div className="flex gap-1">
               <Button size="icon" variant={active.flipH ? 'secondary' : 'ghost'} title="Specchia orizzontalmente" aria-label="Specchia orizzontalmente" aria-pressed={active.flipH} onClick={() => patch({ flipH: !active.flipH })}><FlipHorizontal2 /></Button>
@@ -145,6 +158,7 @@ export function CompositionDialog({ open, onClose, seedFiles, onComplete }: {
             </div>
             <label className="block text-xs">Fusione<select aria-label="Fusione" className="sel mt-1" value={active.blend} onChange={e => patch({ blend: e.target.value as Blend })}>{BLENDS.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
             {number('Opacità %', active.opacity, v => patch({ opacity: v }), 0, 100)}
+            <input type="range" aria-label="Opacità livello" className="loma-range" min={0} max={100} value={active.opacity} onChange={e => patch({ opacity: Number(e.target.value) })} />
             {number('Posizione X', active.x, v => patch({ x: v }), -doc.width * 2, doc.width * 3)}
             {number('Posizione Y', active.y, v => patch({ y: v }), -doc.height * 2, doc.height * 3)}
             {number('Scala %', active.scale * 100, v => patch({ scale: v / 100 }), 1, 1000)}

@@ -14,3 +14,4 @@
 - [x] Save FTP photos to SAF destinations or public Pictures, retaining temporary grid copies.
 - [x] Verify dialog selection/reset (5 tests and browser simulation), generated Java compilation against Android 35 APIs, and native duplicate naming.
 - [ ] Verify real persisted SAF grants and camera transfers on installed APK — requires Android device/microSD, unavailable here.
+- [x] APK live bridge: URL remoto image-harbor-studio, aggiornamento a caldo all avvio/ripresa e da interfaccia
