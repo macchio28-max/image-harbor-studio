@@ -1,4 +1,5 @@
 // Non-destructive photo development pipeline (pixel-level, canvas based).
+import { portraitPass, naturePass, cleanPass, type SrProfile } from "./detail-ai";
 export const HSL_CH = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"] as const;
 export type HslCh = (typeof HSL_CH)[number];
 const HUE_CENTER: Record<HslCh, number> = { red: 0, orange: 30, yellow: 60, green: 120, aqua: 180, blue: 240, purple: 280, magenta: 320 };
@@ -27,7 +28,25 @@ export type Adjust = {
   /** Sharpening mask 0..100: higher values restrict sharpening to edges (protects flat areas/noise). */
   sharpMask: number;
   nrLum: number; nrColor: number;
+  /** Dettaglio AI (local adaptive filters, no network): Ritratto, Nature, Denoise. */
+  portraitSkin: number; portraitEyes: number; natureAmount: number; aiNr: number; aiNrDetail: number;
+  /** Super Risoluzione applied only on export. */
+  srScale: 1 | 2 | 4; srProfile: SrProfile;
+  /** Brush mask with local adjustments; pixels live in MASKS (session memory), keyed by id. */
+  mask: LocalMask;
 };
+export type LocalMask = { id: string; v: number; exposure: number; contrast: number; saturation: number; brightness: number };
+export const emptyMask: LocalMask = { id: "", v: 0, exposure: 0, contrast: 0, saturation: 0, brightness: 0 };
+/** Mask rasters (alpha = coverage), long side ≤ 1200 px, aspect of the photo. */
+export const MASKS = new Map<string, HTMLCanvasElement>();
+const maskCache = new Map<string, { v: number; data: Uint8ClampedArray; w: number; h: number }>();
+function maskData(m: LocalMask) {
+  const c = MASKS.get(m.id); if (!c) return null;
+  const hit = maskCache.get(m.id);
+  if (hit && hit.v === m.v && hit.w === c.width) return hit;
+  const data = c.getContext("2d", { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
+  const e = { v: m.v, data, w: c.width, h: c.height }; maskCache.set(m.id, e); return e;
+}
 
 const zeroHsl = () => Object.fromEntries(HSL_CH.map((c) => [c, { h: 0, s: 0, l: 0 }])) as Record<HslCh, Hsl>;
 
@@ -42,6 +61,8 @@ export const defaultAdjust: Adjust = {
   cbShadows: { h: 0, a: 0 }, cbMid: { h: 0, a: 0 }, cbHigh: { h: 0, a: 0 },
   hsl: zeroHsl(),
   sharpAmount: 0, sharpRadius: 1, sharpMask: 0, nrLum: 0, nrColor: 0,
+  portraitSkin: 0, portraitEyes: 0, natureAmount: 0, aiNr: 0, aiNrDetail: 50,
+  srScale: 1, srProfile: "standard", mask: emptyMask,
 };
 
 export const WB_PRESETS: Record<Exclude<WbMode, "auto" | "custom">, number> = {
@@ -144,7 +165,7 @@ function blurData(src: HTMLCanvasElement, r: number): Uint8ClampedArray | null {
   return ctx.getImageData(0, 0, c.width, c.height).data;
 }
 
-export const isNeutral = (a: Adjust) => JSON.stringify({ ...a, rotation: 0, flipH: false, flipV: false, straighten: 0 }) === JSON.stringify({ ...defaultAdjust });
+export const isNeutral = (a: Adjust) => JSON.stringify({ ...a, rotation: 0, flipH: false, flipV: false, straighten: 0, srScale: 1, srProfile: "standard" }) === JSON.stringify({ ...defaultAdjust });
 
 /**
  * Develops `source` at size w×h. `pxScale` = w / original width (to keep radii consistent).
@@ -300,6 +321,30 @@ export function developCanvas(source: CanvasImageSource, w: number, h: number, a
       if (hist && (i & 12) === 0) { hist[0][R]++; hist[1][G]++; hist[2][Bv]++; }
     }
   }
+  // Dettaglio AI passes (radii follow preview scale so proxy and export match).
+  const rs = Math.max(0.5, pxScale);
+  if (a.aiNr > 0) cleanPass(d, w, h, a.aiNr, a.aiNrDetail);
+  if (a.portraitSkin > 0 || a.portraitEyes > 0) portraitPass(d, w, h, a.portraitSkin, a.portraitEyes, rs);
+  if (a.natureAmount > 0) naturePass(d, w, h, a.natureAmount, rs);
+  const mk = a.mask?.id ? maskData(a.mask) : null;
+  if (mk && (a.mask.exposure || a.mask.contrast || a.mask.saturation || a.mask.brightness)) {
+    const me = a.mask.exposure, mc = a.mask.contrast / 100, ms = a.mask.saturation / 100, mb = a.mask.brightness / 100;
+    const sx = mk.w / fullW, sy = mk.h / fullH;
+    for (let y = 0; y < h; y++) {
+      const my = Math.min(mk.h - 1, ((y + oy) * sy) | 0) * mk.w;
+      for (let x = 0; x < w; x++) {
+        const m = mk.data[(my + Math.min(mk.w - 1, ((x + ox) * sx) | 0)) * 4 + 3] / 255;
+        if (m === 0) continue;
+        const i = (y * w + x) * 4;
+        let r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
+        if (me) { const k = Math.pow(2, me * m); r = exposeChannel(r, k); g = exposeChannel(g, k); b = exposeChannel(b, k); }
+        if (mb) { const k = mb * m * 0.3; r += k * (1 - r); g += k * (1 - g); b += k * (1 - b); if (k < 0) { r = d[i] / 255 * (1 + k); } }
+        if (mc) { const k = 1 + mc * m; r = 0.5 + (r - 0.5) * k; g = 0.5 + (g - 0.5) * k; b = 0.5 + (b - 0.5) * k; }
+        if (ms) { const Y = 0.2126 * r + 0.7152 * g + 0.0722 * b, k = 1 + ms * m; r = Y + (r - Y) * k; g = Y + (g - Y) * k; b = Y + (b - Y) * k; }
+        d[i] = clamp01(r) * 255 + 0.5; d[i + 1] = clamp01(g) * 255 + 0.5; d[i + 2] = clamp01(b) * 255 + 0.5;
+      }
+    }
+  }
   bctx.putImageData(img, 0, 0);
   return { canvas: base, hist: hist as Uint32Array[] | null };
 }
@@ -333,7 +378,7 @@ export async function developCanvasAsync(source: CanvasImageSource, w: number, h
   out.width = w; out.height = h;
   const octx = out.getContext("2d")!;
   const long = Math.max(w, h);
-  const pad = Math.ceil(Math.max(long * 0.015, a.sharpRadius, 2) * 3) + 2;
+  const pad = Math.ceil(Math.max(long * 0.015, a.sharpRadius, 2) * 3) + 24;
   const band = Math.max(64, Math.round(2_000_000 / w));
   const tmp = document.createElement("canvas");
   for (let y0 = 0; y0 < h; y0 += band) {
