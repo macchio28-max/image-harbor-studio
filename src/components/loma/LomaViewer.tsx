@@ -1383,33 +1383,42 @@ export function LomaViewer() {
     notify(path ? `Esportato. Aprilo con ${app} (${path}).` : `Esportato per ${app}. Imposta il percorso in "Percorsi".`);
   };
 
-  const sendToEdit = async () => {
+  const [editAsk, setEditAsk] = useState(false);
+  const sendToEdit = async (forced?: "app" | "web") => {
     if (!need()) return;
+    const pref = forced || (localStorage.getItem("loma.edit.target") as "app" | "web" | null);
+    if (pref !== "app" && pref !== "web") { setEditAsk(true); return; }
     const t = sonnerToast.loading("Invio a LoMa EDIT…");
     try {
       const b = await renderClean(imgEl.current!, adjust, crop, "image/png");
       const f = new File([b], `${baseName(img!.file.name)}.png`, { type: "image/png" });
-      if (isTouchDevice() || (window as any).LomaAndroid) {
-        // Tablet/mobile: system share sheet, pick LoMa EDIT.
-        if (await androidShare(f)) { sonnerToast.success("Scegli LoMa EDIT", { id: t, duration: QUICK_MS }); return; }
-        if (navigator.canShare?.({ files: [f] })) {
-          sonnerToast.dismiss(t);
-          try { await navigator.share({ files: [f], title: f.name }); } catch { /* annullato */ }
-          return;
-        }
-      }
       const desk = (window as any).lomaDesktop;
-      const path = localStorage.getItem("loma.topaz.LoMa EDIT") || "";
-      if (desk?.launchWithData && path) {
-        const r = await desk.launchWithData(path, f.name, b);
-        if (r?.ok) { sonnerToast.success("Foto aperta in LoMa EDIT", { id: t, duration: QUICK_MS }); return; }
-      }
       let copied = false;
       try { copied = desk?.copyImage ? !!(await desk.copyImage(b)) : false; } catch { /* browser */ }
       if (!copied) { try { await navigator.clipboard.write([new ClipboardItem({ "image/png": b })]); copied = true; } catch { /* no clipboard */ } }
-      const url = "https://loma-edit.lovable.app/";
-      if (desk?.openExternal) desk.openExternal(url); else window.open(url, "_blank", "noopener");
-      if (copied) sonnerToast.success("Foto copiata: in LoMa EDIT premi Cmd/Ctrl+V.", { id: t, duration: 6000 });
+      const okMsg = () => sonnerToast.success("Foto copiata: LoMa EDIT pronta all'apertura", { id: t, duration: 4000 });
+      const web = "https://loma-edit.lovable.app/";
+      const openWeb = () => { if (desk?.openExternal) desk.openExternal(web); else window.open(web, "_blank", "noopener"); };
+      if (pref === "app") {
+        if (isTouchDevice() || (window as any).LomaAndroid) {
+          if (await androidShare(f)) { copied ? okMsg() : sonnerToast.success("Scegli LoMa EDIT", { id: t, duration: QUICK_MS }); return; }
+        }
+        const path = localStorage.getItem("loma.topaz.LoMa EDIT") || "";
+        if (desk?.launchWithData && path) {
+          const r = await desk.launchWithData(path, f.name, b);
+          if (r?.ok) { sonnerToast.success("Foto aperta in LoMa EDIT", { id: t, duration: QUICK_MS }); return; }
+        }
+        // Custom protocol; fall back to the web app if nothing takes focus.
+        let left = false;
+        const onBlur = () => { left = true; };
+        window.addEventListener("blur", onBlur, { once: true });
+        if (desk?.openExternal) { try { const r = await desk.openExternal("loma-edit://open"); if (r === false) left = false; else left = true; } catch { /* */ } }
+        else { const fr = document.createElement("iframe"); fr.style.display = "none"; fr.src = "loma-edit://open"; document.body.appendChild(fr); setTimeout(() => fr.remove(), 2000); }
+        await new Promise((r) => setTimeout(r, 1500));
+        window.removeEventListener("blur", onBlur);
+        if (!left && document.visibilityState === "visible") openWeb();
+      } else openWeb();
+      if (copied) okMsg();
       else { sonnerToast.dismiss(t); await exportClean("image/png", "_for_LoMaEDIT"); notify("Foto salvata: aprila in LoMa EDIT."); }
     } catch { sonnerToast.error("Invio a LoMa EDIT non riuscito", { id: t }); }
   };
@@ -1681,6 +1690,7 @@ export function LomaViewer() {
           {nativeApp && <Tool icon={<Repeat className="text-primary" />} label="Aggiorna" tip="Aggiorna app all'ultima versione pubblicata" onClick={() => void updateApp()} />}
           <Tool icon={<ClipboardPaste className="text-primary" />} label="Incolla" tip="Incolla da appunti (Cmd/Ctrl+V)" onClick={() => void pasteButton()} />
           <Tool icon={<SquarePen className="text-primary" />} label="EDIT" tip="Invia la foto a LoMa EDIT" onClick={() => void sendToEdit()} />
+          {editAsk && <EditTargetDialog onClose={() => setEditAsk(false)} onPick={(m, remember) => { if (remember) localStorage.setItem("loma.edit.target", m); setEditAsk(false); void sendToEdit(m); }} />}
           <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/", "com.openai.chatgpt")} />
           <Tool icon={<B.MetaAIIcon />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/", "com.facebook.stellar")} />
           <Tool icon={<B.GeminiIcon />} label="Gemini" onClick={() => openAI("Gemini", "https://gemini.google.com/", "com.google.android.apps.bard")} />
@@ -1973,6 +1983,40 @@ function isTouchDevice() {
     window.matchMedia?.("(pointer: coarse)").matches;
 }
 
+function EditTargetDialog({ onClose, onPick }: { onClose: () => void; onPick: (m: "app" | "web", remember: boolean) => void }) {
+  const [remember, setRemember] = useState(true);
+  const opt = (m: "app" | "web", title: string, sub: string) => (
+    <button onClick={() => onPick(m, remember)} className="w-full rounded-md border border-border bg-secondary/40 p-3 text-left hover:border-primary">
+      <div className="text-sm font-medium">{title}</div><div className="text-xs text-muted-foreground">{sub}</div>
+    </button>
+  );
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70" onClick={onClose}>
+      <div className="w-[420px] max-w-[92vw] space-y-3 rounded-lg border border-border bg-popover p-5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold">Come aprire LoMa EDIT?</h3>
+        {opt("app", "App installata", "Desktop DMG su Mac / APK su Android. La foto viene copiata negli appunti.")}
+        {opt("web", "Browser (Web App)", "Apre loma-edit.lovable.app con la foto negli appunti.")}
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Ricorda questa scelta</label>
+        <p className="text-xs text-muted-foreground">Puoi cambiarla in Impostazioni → Destinazione LoMa EDIT.</p>
+      </div>
+    </div>
+  );
+}
+
+function EditTargetSetting() {
+  const [v, setV] = useState(() => localStorage.getItem("loma.edit.target") || "ask");
+  return (
+    <label className="mb-4 block text-sm">
+      <span className="mb-1 block font-medium">Destinazione LoMa EDIT</span>
+      <select value={v} onChange={(e) => { const x = e.target.value; setV(x); if (x === "ask") localStorage.removeItem("loma.edit.target"); else localStorage.setItem("loma.edit.target", x); }} className="w-full rounded-md border border-border bg-background px-2 py-1.5">
+        <option value="ask">Chiedi ogni volta</option>
+        <option value="app">App installata (DMG / APK)</option>
+        <option value="web">Web App (Browser)</option>
+      </select>
+    </label>
+  );
+}
+
 function TopazSettings({ onClose }: { onClose: () => void }) {
   const apps = ["LoMa EDIT", "Topaz Photo AI", "Topaz Gigapixel AI", "Adobe Photoshop", "Adobe Lightroom", "Adobe Lightroom Classic", "WhatsApp", "LocalSend", "Mail"];
   const [mailMode, setMailMode] = useState(() => localStorage.getItem("loma.mail.mode") || "");
@@ -1997,6 +2041,7 @@ function TopazSettings({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70" onClick={onClose}>
       <div className="w-[520px] max-w-[92vw] rounded-lg border border-border bg-popover p-5" onClick={(e) => e.stopPropagation()}>
+        <EditTargetSetting />
         <h3 className="mb-1 text-lg font-semibold">Percorsi programmi esterni</h3>
         {mobile ? (
           <>
