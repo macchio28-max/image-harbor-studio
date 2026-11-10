@@ -57,7 +57,8 @@ export function CompositionDialog({ open, onClose, seedFiles, onComplete, extra 
   useEffect(() => {
     if (!open || !extra) return;
     const run = () => addPhotos([extra.file], false, { opacity: extra.opacity, name: 'Livello AI' });
-    void (ready.current ?? Promise.resolve()).then(run, run);
+    const t = setTimeout(() => void (ready.current ?? Promise.resolve()).then(run, run), 0); // after the seed effect
+    return () => clearTimeout(t);
   }, [extra?.key]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!open || seeded.current) return;
@@ -157,6 +158,7 @@ export function CompositionDialog({ open, onClose, seedFiles, onComplete, extra 
             </div>
             <label className="block text-xs">Fusione<select aria-label="Fusione" className="sel mt-1" value={active.blend} onChange={e => patch({ blend: e.target.value as Blend })}>{BLENDS.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
             {number('Opacità %', active.opacity, v => patch({ opacity: v }), 0, 100)}
+            <input type="range" aria-label="Opacità livello" className="loma-range" min={0} max={100} value={active.opacity} onChange={e => patch({ opacity: Number(e.target.value) })} />
             {number('Posizione X', active.x, v => patch({ x: v }), -doc.width * 2, doc.width * 3)}
             {number('Posizione Y', active.y, v => patch({ y: v }), -doc.height * 2, doc.height * 3)}
             {number('Scala %', active.scale * 100, v => patch({ scale: v / 100 }), 1, 1000)}
