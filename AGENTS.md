@@ -20,7 +20,7 @@
 - FTP (camera receiver server + NAS client) lives in electron/ftp.cjs using only Node "net", no npm FTP deps, so electron-builder packaging (files list excludes node_modules extras) never breaks; browsers get a simulator only.
 - Android FTP receiver is a plain-Java ServerSocket server inside generated MainActivity (scripts/android-native.cjs); destinations use persisted SAF tree grants or public Pictures through MediaStore. Stream to the destination and a disposable cache copy for the existing shared-files push channel (ftp:true → always appended); acknowledge FTP success only after the destination is committed, never silently fall back when a selected folder is inaccessible.
 
-- External prompt sharing keeps local offline templates and sends full text with the photo via native EXTRA_TEXT, Web Share or a combined clipboard item; no model calls or server dependencies.
+- External prompt sending uses image-only clipboard (native image URI on Android), with text in prefill links or EXTRA_TEXT; never fall back to clipboard text when a photo copy fails, so pasting cannot lose the photo. The explicit combined-copy command remains separate; no model calls or server dependencies.
 - Comparison photo transfers move the same collection item and invalidate both pane load generations; pointer dragging supports touch/stylus separately from mouse HTML drag.
 
 - Dettaglio AI and Super Risoluzione are local adaptive filters (detail-ai.ts, ported from LoMa EDIT), never network inference; Super Risoluzione runs only on export. Brush-mask rasters live in session memory (develop.ts MASKS) referenced by Adjust.mask id/version and are excluded from user presets.

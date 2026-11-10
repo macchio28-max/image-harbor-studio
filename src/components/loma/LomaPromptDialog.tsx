@@ -41,6 +41,7 @@ export function LomaPromptDialog({ open, onClose, getPhoto, getPng, onText }: {
     try {
       const result = target ? await sendPhotoPrompt(target, text, getPhoto ? await getPhoto() : null, getPng) : await copyPhotoPrompt(text, getPng);
       if (result === "cancelled") toast.dismiss(id);
+      else if (result === "copy-failed") toast.error("Foto non copiata: allegala nella chat. Il prompt resta disponibile in LoMa Prompt.", { id, duration: 8000 });
       else if (result === "prefill") toast.success("Prompt già inserito: incolla la foto (Cmd/Ctrl+V) nella chat.", { id, duration: 8000 });
       else if (result === "image") toast.success("Foto copiata: incollala nella chat, poi premi “Copia prompt”.", { id, duration: 30000, action: { label: "Copia prompt", onClick: () => void navigator.clipboard.writeText(text).then(() => toast.success("Prompt copiato: incollalo nella chat.", { duration: 1000 })) } });
       else if (result === "text") toast.message("Prompt completo copiato; allega la foto nell’app scelta.", { id, duration: 8000 });
