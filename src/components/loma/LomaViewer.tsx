@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { ChevronLeft, ChevronRight, Undo2, Redo2, MoreHorizontal, Server, Layers, SquarePen, ClipboardPaste, Replace, Layers2 } from "lucide-react";
 import { imageFromPaste, readClipboardImage } from "./paste-image";
+import { startLiveUpdates, hasUpdate, forceReload } from "@/lib/live-update";
 import { MASKS, emptyMask } from "./develop";
 import type { BrushState } from "./DevelopPanel";
 import { CompositionDialog } from "./CompositionDialog";
@@ -737,6 +738,14 @@ export function LomaViewer() {
   const canUndo = histRef.current.past.length > 0 || pendingEdit;
   const canRedo = histRef.current.future.length > 0 && !pendingEdit;
 
+  const [nativeApp, setNativeApp] = useState(false);
+  useEffect(() => { setNativeApp(!!(window as any).Capacitor?.isNativePlatform?.()); return startLiveUpdates(); }, []);
+  const updateApp = async () => {
+    const t = sonnerToast.loading("Cerco aggiornamenti…");
+    if (await hasUpdate()) { sonnerToast.success("Nuova versione: ricarico", { id: t, duration: QUICK_MS }); }
+    else sonnerToast.success("Ricarico l'ultima versione", { id: t, duration: QUICK_MS });
+    setTimeout(forceReload, 300);
+  };
   // Paste from clipboard: Cmd/Ctrl+V anywhere (outside text fields) or the toolbar button.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -1669,6 +1678,7 @@ export function LomaViewer() {
         </Group>
         <Group>
           <Tool icon={<img src={promptIcon.url} alt="" className="h-6 w-6 rounded-full" />} label="Prompt" tip="LoMa Prompt: foto e prompt per AI esterne" active={promptOpen} onClick={() => setPromptOpen(true)} />
+          {nativeApp && <Tool icon={<Repeat className="text-primary" />} label="Aggiorna" tip="Aggiorna app all'ultima versione pubblicata" onClick={() => void updateApp()} />}
           <Tool icon={<ClipboardPaste className="text-primary" />} label="Incolla" tip="Incolla da appunti (Cmd/Ctrl+V)" onClick={() => void pasteButton()} />
           <Tool icon={<SquarePen className="text-primary" />} label="EDIT" tip="Invia la foto a LoMa EDIT" onClick={() => void sendToEdit()} />
           <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/", "com.openai.chatgpt")} />
