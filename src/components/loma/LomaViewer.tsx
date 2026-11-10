@@ -6,7 +6,10 @@ import {
   Phone, Radio, Send, Info, MapPin, FileText, ChevronDown, FolderOpen, Images, RotateCw, RotateCcw,
   FlipHorizontal, Crop, X, Settings, GalleryHorizontal, Trash2, Minimize2, Copy, Repeat, LayoutGrid, Square, Printer, Share2,
 } from "lucide-react";
-import { ChevronLeft, ChevronRight, Undo2, Redo2, MoreHorizontal, Server, Layers, SquarePen } from "lucide-react";
+import { ChevronLeft, ChevronRight, Undo2, Redo2, MoreHorizontal, Server, Layers, SquarePen, ClipboardPaste, Replace, Layers2 } from "lucide-react";
+import { imageFromPaste, readClipboardImage } from "./paste-image";
+import { MASKS, emptyMask } from "./develop";
+import type { BrushState } from "./DevelopPanel";
 import { CompositionDialog } from "./CompositionDialog";
 import { LomaPromptDialog } from "./LomaPromptDialog";
 import promptIcon from "@/assets/loma-prompt-icon.png.asset.json";
@@ -81,6 +84,12 @@ export function LomaViewer() {
   const [promptOpen, setPromptOpen] = useState(false);
   const [promptText, setPromptText] = useState("");
   const [compositionOpen, setCompositionOpen] = useState(false);
+  const [pasted, setPasted] = useState<File | null>(null);
+  const [pasteOpacity, setPasteOpacity] = useState(100);
+  const [compositionExtra, setCompositionExtra] = useState<{ file: File; opacity: number; key: number } | null>(null);
+  const [brush, setBrush] = useState<BrushState>({ on: false, erase: false, size: 60, overlay: false });
+  const maskCv = useRef<HTMLCanvasElement>(null);
+  const stroke = useRef<{ x: number; y: number; raf: number } | null>(null);
   const [printSrc, setPrintSrc] = useState<string | null>(null);
   const [waAsk, setWaAsk] = useState(false);
   const [mailAsk, setMailAsk] = useState(false);
@@ -728,10 +737,104 @@ export function LomaViewer() {
   const canUndo = histRef.current.past.length > 0 || pendingEdit;
   const canRedo = histRef.current.future.length > 0 && !pendingEdit;
 
+  // Paste from clipboard: Cmd/Ctrl+V anywhere (outside text fields) or the toolbar button.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if ((e.target as HTMLElement)?.closest?.("input,textarea,[contenteditable]")) return;
+      const f = imageFromPaste(e); if (!f) return;
+      e.preventDefault(); setPasteOpacity(100); setPasted(f);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
+  const pasteButton = async () => {
+    try {
+      const f = await readClipboardImage();
+      if (f) { setPasteOpacity(100); setPasted(f); } else sonnerToast("Nessuna immagine negli appunti. Puoi anche premere Cmd/Ctrl+V.", { duration: 2500 });
+    } catch { sonnerToast("Permesso appunti negato: premi Cmd/Ctrl+V o tieni premuto e scegli Incolla.", { duration: 3000 }); }
+  };
+  const replaceWithPasted = () => {
+    const f = pasted; setPasted(null); if (!f) return;
+    if (!session.length) { const dt = new DataTransfer(); dt.items.add(f); void importRef.current(dt.files); return; }
+    const it: CullItem = { id: `paste${Date.now()}-${f.name}`, file: f, thumb: null, rating: 0, locked: false, flagged: false };
+    setSession((s) => [...s, it]); setCurId(it.id); setView("loupe"); void openFile(f);
+  };
+  const pasteAsLayer = () => {
+    const f = pasted; setPasted(null); if (!f) return;
+    if (!img) { sonnerToast("Apri prima una foto di base.", { duration: 2000 }); return; }
+    setCompositionExtra({ file: f, opacity: pasteOpacity, key: Date.now() }); setCompositionOpen(true);
+  };
+
+  // Brush mask: paints coverage into an in-memory raster; the red overlay is hidden unless toggled on.
+  const maskRaster = () => {
+    if (!img) return null;
+    let id = adjust.mask.id, c = id ? MASKS.get(id) : undefined;
+    if (!c) {
+      id = crypto.randomUUID(); c = document.createElement("canvas");
+      const k = Math.min(1, 1200 / Math.max(img.w, img.h));
+      c.width = Math.max(1, Math.round(img.w * k)); c.height = Math.max(1, Math.round(img.h * k));
+      MASKS.set(id, c); const nid = id;
+      setAdjust((a) => ({ ...a, mask: { ...a.mask, id: nid, v: a.mask.v + 1 } }));
+    }
+    return c;
+  };
+  const drawOverlay = useCallback(() => {
+    const o = maskCv.current; if (!o) return;
+    const c = adjust.mask.id ? MASKS.get(adjust.mask.id) : undefined;
+    const ctx = o.getContext("2d")!;
+    if (!c || !brush.overlay) { ctx.clearRect(0, 0, o.width, o.height); return; }
+    if (o.width !== c.width || o.height !== c.height) { o.width = c.width; o.height = c.height; }
+    ctx.globalCompositeOperation = "source-over"; ctx.clearRect(0, 0, o.width, o.height); ctx.drawImage(c, 0, 0);
+    ctx.globalCompositeOperation = "source-in"; ctx.fillStyle = "rgba(255,0,0,0.45)"; ctx.fillRect(0, 0, o.width, o.height);
+    ctx.globalCompositeOperation = "source-over";
+  }, [adjust.mask.id, brush.overlay]);
+  useEffect(() => { drawOverlay(); }, [drawOverlay, adjust.mask.v]);
+  const dab = (c: HTMLCanvasElement, x0: number, y0: number, x1: number, y1: number) => {
+    const k = c.width / (img?.w ?? 1), r = Math.max(1, (brush.size / 2 / scale) * k);
+    const ctx = c.getContext("2d")!;
+    ctx.globalCompositeOperation = brush.erase ? "destination-out" : "source-over";
+    const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * k / (r * 0.3)));
+    for (let i = 0; i <= n; i++) {
+      const x = (x0 + (x1 - x0) * i / n) * k, y = (y0 + (y1 - y0) * i / n) * k;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, "rgba(255,255,255,0.35)"); g.addColorStop(0.6, "rgba(255,255,255,0.25)"); g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalCompositeOperation = "source-over";
+  };
+  const brushDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.stopPropagation(); e.preventDefault();
+    const c = maskRaster(); if (!c) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const x = e.nativeEvent.offsetX, y = e.nativeEvent.offsetY;
+    stroke.current = { x, y, raf: 0 }; dab(c, x, y, x, y); bumpMask();
+  };
+  const bumpMask = () => {
+    const st = stroke.current; if (!st || st.raf) return;
+    st.raf = requestAnimationFrame(() => { if (stroke.current) stroke.current.raf = 0; setAdjust((a) => ({ ...a, mask: { ...a.mask, v: a.mask.v + 1 } })); });
+  };
+  const brushMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const st = stroke.current; if (!st) return;
+    e.stopPropagation();
+    const c = adjust.mask.id ? MASKS.get(adjust.mask.id) : maskRaster(); if (!c) return;
+    const x = e.nativeEvent.offsetX, y = e.nativeEvent.offsetY;
+    dab(c, st.x, st.y, x, y); st.x = x; st.y = y; bumpMask();
+  };
+  const brushUp = () => { const st = stroke.current; stroke.current = null; if (st?.raf) cancelAnimationFrame(st.raf); setAdjust((a) => ({ ...a, mask: { ...a.mask, v: a.mask.v + 1 } })); };
+  const clearMask = () => { if (adjust.mask.id) MASKS.delete(adjust.mask.id); setAdjust((a) => ({ ...a, mask: emptyMask })); };
+  const fullDeveloped = () => {
+    const src = imgEl.current; if (!img || !src || !src.naturalWidth) return null;
+    const dev = developCanvas(src, img.w, img.h, adjust, 1).canvas;
+    if (!crop) return dev;
+    const c = document.createElement("canvas"); c.width = Math.round(crop.w); c.height = Math.round(crop.h);
+    c.getContext("2d")!.drawImage(dev, crop.x, crop.y, crop.w, crop.h, 0, 0, c.width, c.height);
+    return c;
+  };
+
   // keyboard culling
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e) => {
-    if (compositionOpen || promptOpen) return;
+    if (compositionOpen || promptOpen || pasted) return;
     const t = e.target as HTMLElement;
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && (k === "z" || k === "y") && !t?.closest?.("textarea,[contenteditable],input[type=text]")) {
@@ -1323,6 +1426,7 @@ export function LomaViewer() {
     imageRendering: scale >= 2 ? "pixelated" : "auto",
   });
   const rotStyle: React.CSSProperties = {
+    position: "relative",
     transform: `rotate(${adjust.rotation + adjust.straighten}deg) scale(${adjust.flipH ? -1 : 1}, ${adjust.flipV ? -1 : 1})`,
     transformOrigin: "center", width: "100%", height: "100%",
   };
@@ -1419,6 +1523,9 @@ export function LomaViewer() {
                   <div style={rotStyle}>
                     <img ref={imgEl} src={img.url} alt={img.file.name} draggable={false} onLoad={() => setImgReady((n) => n + 1)} className={isNeutral(adjust) ? "block max-w-none" : "hidden"} style={{ width: img.w, height: img.h, imageRendering: scale >= 2 ? "pixelated" : "auto" }} />
                     <canvas ref={preview} aria-label={img.file.name} style={{ display: isNeutral(adjust) ? "none" : "block", width: img.w, height: img.h, imageRendering: scale >= 2 ? "pixelated" : "auto" }} />
+                    <canvas ref={maskCv} aria-label="Maschera pennello" className="absolute left-0 top-0"
+                      onPointerDown={brushDown} onPointerMove={brushMove} onPointerUp={brushUp} onPointerCancel={brushUp}
+                      style={{ width: img.w, height: img.h, touchAction: "none", pointerEvents: brush.on && toolsOpen && !cropping ? "auto" : "none", cursor: brush.on ? "crosshair" : undefined, display: (brush.on && toolsOpen) || brush.overlay ? "block" : "none" }} />
                   </div>
                 </div>
               </div>
@@ -1562,6 +1669,7 @@ export function LomaViewer() {
         </Group>
         <Group>
           <Tool icon={<img src={promptIcon.url} alt="" className="h-6 w-6 rounded-full" />} label="Prompt" tip="LoMa Prompt: foto e prompt per AI esterne" active={promptOpen} onClick={() => setPromptOpen(true)} />
+          <Tool icon={<ClipboardPaste className="text-primary" />} label="Incolla" tip="Incolla da appunti (Cmd/Ctrl+V)" onClick={() => void pasteButton()} />
           <Tool icon={<SquarePen className="text-primary" />} label="EDIT" tip="Invia la foto a LoMa EDIT" onClick={() => void sendToEdit()} />
           <Tool icon={<B.ChatGPTIcon />} label="ChatGPT" onClick={() => openAI("ChatGPT", "https://chatgpt.com/", "com.openai.chatgpt")} />
           <Tool icon={<B.MetaAIIcon />} label="Meta AI" onClick={() => openAI("Meta AI", "https://www.meta.ai/", "com.facebook.stellar")} />
@@ -1619,7 +1727,9 @@ export function LomaViewer() {
             cropping={cropping} aspect={aspect} sheet={phone}
             onAspect={aspectSel} onStartCrop={startCrop} onApplyCrop={applyCrop} onCancelCrop={cancelCrop} onResetCrop={() => { setCrop(null); setSel(null); setCropping(false); }}
             onResetAll={() => { setAdjust(defaultAdjust); setCrop(null); setSel(null); setCropping(false); }}
-            onClose={() => setToolsOpen(false)}
+            onClose={() => { setToolsOpen(false); setBrush((b) => ({ ...b, on: false })); }}
+            getFull={img ? fullDeveloped : undefined}
+            brush={brush} setBrush={setBrush} onClearMask={clearMask}
           />
         )}
         {/* Canvas */}
@@ -1735,7 +1845,19 @@ export function LomaViewer() {
       />
       {convOpen && <ConvertDialog current={img?.file ?? null} preview={img?.url ?? null} size={img ? { w: img.w, h: img.h } : null} session={session} visible={visible} onClose={() => setConvOpen(false)} />}
       <LomaPromptDialog open={promptOpen} onClose={() => setPromptOpen(false)} getPhoto={img ? outputFile : undefined} getPng={img ? promptPng : undefined} onText={setPromptText} />
-      <CompositionDialog open={compositionOpen} onClose={() => setCompositionOpen(false)}
+      {pasted && (
+        <div role="dialog" aria-label="Incolla da appunti" className="fixed inset-0 z-[70] flex items-center justify-center bg-background/70 p-3" onPointerDown={(e) => { if (e.target === e.currentTarget) setPasted(null); }}>
+          <div className="w-full max-w-sm space-y-3 rounded-lg border border-border bg-card p-4 shadow-2xl">
+            <div className="flex items-center gap-2"><ClipboardPaste className="h-5 w-5 text-primary" /><h2 className="flex-1 font-semibold">Immagine dagli appunti</h2>
+              <button aria-label="Chiudi" onClick={() => setPasted(null)} className="rounded p-1 hover:bg-accent"><X className="h-4 w-4" /></button></div>
+            <button onClick={replaceWithPasted} className="flex w-full items-start gap-3 rounded-md bg-primary p-3 text-left text-primary-foreground"><Replace className="h-5 w-5 shrink-0" /><span><b className="block">Sostituisci foto</b><span className="text-xs opacity-80">Apri l'immagine incollata come foto</span></span></button>
+            <button onClick={pasteAsLayer} disabled={!img} className="flex w-full items-start gap-3 rounded-md border border-border bg-secondary p-3 text-left hover:bg-accent disabled:opacity-40"><Layers2 className="h-5 w-5 shrink-0 text-primary" /><span><b className="block">Aggiungi come Livello AI</b><span className="text-xs text-muted-foreground">Sopra la foto aperta, nel compositore livelli</span></span></button>
+            <label className="block space-y-1 text-xs"><span className="flex justify-between text-muted-foreground"><span>Opacità livello</span><span>{pasteOpacity}%</span></span>
+              <input type="range" min={0} max={100} value={pasteOpacity} onChange={(e) => setPasteOpacity(Number(e.target.value))} className="w-full" aria-label="Opacità livello" /></label>
+          </div>
+        </div>
+      )}
+      <CompositionDialog open={compositionOpen} onClose={() => setCompositionOpen(false)} extra={compositionExtra}
         seedFiles={async () => {
           if (multiFiles().length > 1) return makeUploadFiles("clean");
           const source = imgEl.current;
