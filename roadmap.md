@@ -1,7 +1,8 @@
 - [x] Center A/B graphics; move photos with mouse, touch and stylus.
 - [x] Add LoMa Prompt logo/templates and external photo + full-prompt sharing without internal AI; local offline prompt edits.
 - [x] Verify tablet/phone/desktop prompt layout, real mouse/pen/touch transfers, prompt persistence, native bridge payload and 12 unit tests.
-- [ ] Verify photo + prompt reception in installed Android AI apps — requires new APK and physical device; receiving apps may ignore text, retained in native clipboard.
+- [ ] Verify photo + prompt reception in installed Android AI apps — requires new APK and physical device; receiving apps may ignore EXTRA_TEXT, full prompt remains available in LoMa Prompt.
+- [x] Check ChatGPT image-only clipboard on web/desktop, prevent text fallback on photo-copy failure, and remove native Android clipboard text overwrite.
 - [x] Independent A/B collections, folder import on both sides, single-photo close/replacement and comparison exit.
 - [x] Verify A/B collections with tests and desktop/tablet browser flows.
 - [x] White track / blue thumb scrollbars in shared styles across platforms.

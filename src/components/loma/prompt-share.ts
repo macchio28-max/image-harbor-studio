@@ -34,18 +34,22 @@ export async function sendPhotoPrompt(target: PromptTarget, text: string, file: 
   }
   // Chat apps paste text instead of the image when both share one clipboard item:
   // put only the photo on the clipboard and deliver the prompt separately.
-  let result: "image" | "text" | "prefill" = "text";
+  let result: "image" | "text" | "prefill" | "copy-failed" = "copy-failed";
   const copier = (window as Window & { lomaDesktop?: { copyImage?: (b: Blob) => Promise<boolean> } }).lomaDesktop?.copyImage;
   if (png && copier) {
     try { if (await copier(await png())) result = "image"; } catch { /* fall back to browser clipboard */ }
   }
-  if (png && result === "text" && typeof ClipboardItem !== "undefined") {
-    try { await navigator.clipboard.write([new ClipboardItem({ "image/png": png().then(f => f as Blob) })]); result = "image"; } catch { /* text only */ }
+  if (png && result === "copy-failed" && typeof ClipboardItem !== "undefined") {
+    try { await navigator.clipboard.write([new ClipboardItem({ "image/png": png().then(f => f as Blob) })]); result = "image"; } catch { /* Report failure; never replace the image with text. */ }
   }
   const url = target.prefill && text.trim() && text.length < 6000 ? target.prefill + encodeURIComponent(text) : target.url;
   if (result === "image" && url !== target.url) result = "prefill";
-  // Never overwrite the photo with text: with prefill the prompt travels in the URL.
-  if (result === "text" && url === target.url) await navigator.clipboard.writeText(text);
+  // Text-only copying is allowed only when no photo was supplied at all.
+  // Long prompts remain in the editable dialog and can be copied explicitly after pasting the photo.
+  if (!file && !png) {
+    await navigator.clipboard.writeText(text);
+    result = "text";
+  }
   const desktop = (window as Window & { lomaDesktop?: { openExternal: (url: string) => void } }).lomaDesktop;
   if (desktop?.openExternal) desktop.openExternal(url);
   else window.open(url, "_blank", "noopener");

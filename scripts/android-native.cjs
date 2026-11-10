@@ -364,11 +364,9 @@ public class MainActivity extends BridgeActivity {
                 send.setClipData(ClipData.newRawUri(f.getName(), uri));
                 send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
                 runOnUiThread(() -> {
-                    // Keep a second copy: some receiving apps ignore EXTRA_TEXT with images.
-                    if (text != null && !text.isEmpty()) {
-                        android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                        if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("LoMa Prompt", text));
-                    }
+                    // Clipboard holds only the photo; the full prompt travels in EXTRA_TEXT.
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (cm != null) cm.setPrimaryClip(ClipData.newUri(getContentResolver(), "LoMa Photo", uri));
                     if (pkg != null && !pkg.isEmpty()) {
                         try { startActivity(new Intent(send).setPackage(pkg)); return; } catch (Exception e) { Log.i(TAG, "AI app unavailable; use chooser"); }
                     }
