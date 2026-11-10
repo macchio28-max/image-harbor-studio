@@ -291,7 +291,11 @@ ipcMain.handle("loma:getDbxToken", async (_e, key) => {
 });
 ipcMain.handle("loma:hasDbxToken", () => { const t = readDbx(); return !!(t && (t.refresh_token || t.expires_at > Date.now())); });
 ipcMain.handle("loma:signOutDbx", () => { try { fs.unlinkSync(dbxFile()); } catch {} return true; });
-ipcMain.handle("loma:openExternal", (_e, u) => (/^https?:\/\//.test(u) ? shell.openExternal(u) : null));
+ipcMain.handle("loma:openExternal", async (_e, u) => {
+  if (/^https?:\/\//.test(u)) return shell.openExternal(u);
+  if (/^loma-edit:\/\//.test(u)) { try { await shell.openExternal(u); return true; } catch { return false; } }
+  return null;
+});
 
 app.whenReady().then(() => {
   // Google rejects OAuth with "disallowed_useragent" when the UA contains Electron/...
