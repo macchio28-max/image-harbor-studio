@@ -2,7 +2,7 @@
 // Reads only the shooting data the EXIF tab shows.
 
 const TAGS: Record<number, string> = {
-  0x010f: "Make", 0x0110: "Model", 0x0131: "Software", 0x0132: "ModifyDate", 0x013b: "Artist",
+  0x010f: "Make", 0x0112: "Orientation", 0x0110: "Model", 0x0131: "Software", 0x0132: "ModifyDate", 0x013b: "Artist",
   0x829a: "ExposureTime", 0x829d: "FNumber", 0x8827: "ISO", 0x9003: "DateTimeOriginal",
   0x9201: "ShutterSpeedValue", 0x9202: "ApertureValue", 0x9204: "ExposureCompensation",
   0x9207: "MeteringMode", 0x9209: "Flash", 0x920a: "FocalLength", 0xa405: "FocalLengthIn35mmFormat",
